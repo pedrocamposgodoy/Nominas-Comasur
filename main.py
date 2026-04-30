@@ -7,78 +7,94 @@ import re
 st.set_page_config(page_title="Extractor Comasur", page_icon="📊", layout="wide")
 
 st.title("📊 Extractor de Nóminas: Comasur SA")
-st.markdown("Esta aplicación extrae datos del resumen contable, **anonimiza los nombres** y agrupa los totales por sucursal.")
+st.markdown("Procesa el resumen contable, anonimiza nombres y agrupa totales.")
 
 def limpiar_monto(valor):
-    """Convierte texto como '4.916,43' en número 4916.43"""
+    """Limpia los números, incluyendo posibles errores de OCR en el PDF."""
     if not valor or str(valor).strip() == "": return 0.0
-    # Quitamos puntos de miles y cambiamos coma por punto decimal
+    # Reemplazar puntos de miles y comas por formato decimal de Python
     s = str(valor).replace('.', '').replace(',', '.')
     match = re.search(r"[-+]?\d*\.\d+|\d+", s)
     return float(match.group()) if match else 0.0
 
-def extraer_sucursal(texto):
-    """Detecta la sucursal ignorando los nombres de los empleados"""
-    lineas = [l.strip() for l in str(texto).split('\n') if l.strip()]
-    for l in lineas:
-        if any(centro in l.upper() for centro in ["MOTRIL", "COMASUR", "CENTRO"]):
-            return l
-    return "CENTRO GENERAL"
-
 archivo_pdf = st.file_uploader("Sube el PDF de Resumen Contable", type="pdf")
 
 if archivo_pdf:
-    with st.spinner('Analizando documento y anonimizando...'):
+    with st.spinner('Desempaquetando la estructura interna del documento...'):
         all_data = []
         with pdfplumber.open(archivo_pdf) as pdf:
             for page in pdf.pages:
                 tabla = page.extract_table()
                 if tabla:
-                    all_data.extend(tabla)
+                    # SOLUCIÓN AL FALLO: Aplanar celdas con saltos de línea (\n)
+                    # Separa a los empleados que el PDF agrupa en un mismo bloque de texto.
+                    for fila in tabla:
+                        tiene_saltos = any('\n' in str(celda) for celda in fila if celda)
+                        if tiene_saltos:
+                            lineas_por_celda = [str(celda).split('\n') if celda else [] for celda in fila]
+                            max_lineas = max((len(lineas) for lineas in lineas_por_celda), default=0)
+                            for i in range(max_lineas):
+                                nueva_fila = [lineas[i].strip() if i < len(lineas) else "" for lineas in lineas_por_celda]
+                                if any(nueva_fila):
+                                    all_data.append(nueva_fila)
+                        else:
+                            if any(fila):
+                                all_data.append(fila)
 
-    if all_data:
-        # Creamos la tabla inicial
-        df = pd.DataFrame(all_data[1:], columns=all_data[0])
-        col_id = df.columns[0] # Es la columna "Cód. Nombre / Centro"
+        if all_data:
+            # 1. Convertir a DataFrame y configurar cabeceras
+            df = pd.DataFrame(all_data)
+            df.columns = df.iloc[0].astype(str)
+            df = df[1:]
+            
+            col_id = df.columns[0] # Corresponde a "Cód. Nombre / Centro"
 
-        # 1. Limpieza de filas innecesarias (totales del PDF, vacíos, cabeceras)
-        df = df.dropna(subset=[col_id])
-        df = df[~df[col_id].str.contains("Total|Cuenta|Cód|Página", na=False, case=False)]
+            # 2. Eliminar basura técnica del PDF (totales incrustados, páginas, vacíos)
+            df = df[df[col_id].astype(str).str.strip() != ""]
+            df = df[~df[col_id].astype(str).str.contains("Total|Cuenta|Cód|Página", na=False, case=False)]
 
-        # 2. Anonimización: Extraemos la sucursal y borramos la columna de nombres
-        df['Sucursal'] = df[col_id].apply(extraer_sucursal)
-        df_final = df.drop(columns=[col_id])
+            # 3. Detectar la sucursal y propagarla hacia abajo
+            # Si en la línea pone "MOTRIL", marca esa sucursal. Si no, arrastra la anterior.
+            def identificar_centro(texto):
+                if "MOTRIL" in str(texto).upper(): return "COMASUR MOTRIL"
+                return None
 
-        # 3. Conversión de todas las columnas numéricas
-        for col in df_final.columns:
-            if col != 'Sucursal':
-                df_final[col] = df_final[col].apply(limpiar_monto)
+            df['Sucursal'] = df[col_id].apply(identificar_centro)
+            df['Sucursal'] = df['Sucursal'].ffill().fillna("OTRO CENTRO")
 
-        # 4. Agrupación por Sucursal (Suma totales y cuenta empleados)
-        dict_agg = {'Sucursal': 'count'}
-        for col in df_final.columns:
-            if col != 'Sucursal':
-                dict_agg[col] = 'sum'
-        
-        resumen = df_final.groupby('Sucursal').agg(dict_agg).rename(columns={'Sucursal': 'Nº Empleados'})
+            # 4. ANONIMIZACIÓN: Eliminamos de forma permanente los nombres e IDs
+            df_final = df.drop(columns=[col_id])
 
-        # --- MOSTRAR RESULTADOS ---
-        st.success("✅ Procesamiento completado")
-        
-        # Métricas principales
-        c1, c2 = st.columns(2)
-        c1.metric("Total Empleados", int(resumen['Nº Empleados'].sum()))
-        
-        # Buscar columna de líquido para la métrica
-        col_liq = [c for c in resumen.columns if 'LÍQUIDO' in c.upper() or 'LIQUIDO' in c.upper()]
-        if col_liq:
-            c2.metric("Total Líquido", f"{resumen[col_liq[0]].sum():,.2f} €")
+            # 5. Limpieza de datos numéricos en el resto de columnas
+            for col in df_final.columns:
+                if col != 'Sucursal':
+                    df_final[col] = df_final[col].apply(limpiar_monto)
 
-        # Tabla resumen
-        st.subheader("📋 Totales Agregados por Centro")
-        cols_moneda = [c for c in resumen.columns if c != 'Nº Empleados']
-        st.dataframe(resumen.style.format("{:,.2f} €", subset=cols_moneda))
+            # 6. Agrupación y Suma de Totales
+            # Descartamos filas residuales de texto que se convirtieron en '0.0'
+            cols_numericas = [c for c in df_final.columns if c != 'Sucursal']
+            df_empleados = df_final[(df_final[cols_numericas] > 0).any(axis=1)].copy()
 
-        # Botón de descarga para Excel
-        csv = resumen.to_csv(index=True, sep=';', decimal=',').encode('utf-8-sig')
-        st.download_button("📥 Descargar Reporte para Excel", csv, "resumen_comasur.csv", "text/csv")
+            resumen = df_empleados.groupby('Sucursal').agg('sum')
+            resumen['Nº Empleados'] = df_empleados.groupby('Sucursal').size()
+
+            # --- VISUALIZACIÓN ---
+            st.success("✅ Procesamiento completado con éxito")
+            
+            # Métricas rápidas en la web
+            c1, c2 = st.columns(2)
+            c1.metric("Total Empleados", int(resumen['Nº Empleados'].sum()))
+            
+            col_liq = [c for c in resumen.columns if 'LÍQUIDO' in c.upper() or 'LIQUIDO' in c.upper()]
+            if col_liq:
+                c2.metric("Total Líquido", f"{resumen[col_liq[0]].sum():,.2f} €")
+
+            st.subheader("📋 Totales Agregados")
+            cols_moneda = [c for c in resumen.columns if c != 'Nº Empleados']
+            st.dataframe(resumen.style.format("{:,.2f} €", subset=cols_moneda))
+
+            # Descarga de resultados
+            csv = resumen.to_csv(index=True, sep=';', decimal=',').encode('utf-8-sig')
+            st.download_button("📥 Descargar Excel Agrupado", csv, "resumen_corregido.csv", "text/csv")
+        else:
+            st.error("No se detectó información procesable. Revisa el documento.")
