@@ -1,4 +1,5 @@
 streamlit
-pandas
+pandas==2.2.2
 pdfplumber
 pdfminer.six
+Pillow
