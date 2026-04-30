@@ -26,8 +26,7 @@ if archivo_pdf:
             for page in pdf.pages:
                 tabla = page.extract_table()
                 if tabla:
-                    # SOLUCIÓN AL FALLO: Aplanar celdas con saltos de línea (\n)
-                    # Separa a los empleados que el PDF agrupa en un mismo bloque de texto.
+                    # Aplanar celdas con saltos de línea (\n)
                     for fila in tabla:
                         tiene_saltos = any('\n' in str(celda) for celda in fila if celda)
                         if tiene_saltos:
@@ -49,12 +48,11 @@ if archivo_pdf:
             
             col_id = df.columns[0] # Corresponde a "Cód. Nombre / Centro"
 
-            # 2. Eliminar basura técnica del PDF (totales incrustados, páginas, vacíos)
+            # 2. Eliminar basura técnica del PDF
             df = df[df[col_id].astype(str).str.strip() != ""]
             df = df[~df[col_id].astype(str).str.contains("Total|Cuenta|Cód|Página", na=False, case=False)]
 
             # 3. Detectar la sucursal y propagarla hacia abajo
-            # Si en la línea pone "MOTRIL", marca esa sucursal. Si no, arrastra la anterior.
             def identificar_centro(texto):
                 if "MOTRIL" in str(texto).upper(): return "COMASUR MOTRIL"
                 return None
@@ -62,16 +60,15 @@ if archivo_pdf:
             df['Sucursal'] = df[col_id].apply(identificar_centro)
             df['Sucursal'] = df['Sucursal'].ffill().fillna("OTRO CENTRO")
 
-            # 4. ANONIMIZACIÓN: Eliminamos de forma permanente los nombres e IDs
+            # 4. ANONIMIZACIÓN: Eliminamos los nombres e IDs
             df_final = df.drop(columns=[col_id])
 
-            # 5. Limpieza de datos numéricos en el resto de columnas
+            # 5. Limpieza de datos numéricos
             for col in df_final.columns:
                 if col != 'Sucursal':
                     df_final[col] = df_final[col].apply(limpiar_monto)
 
             # 6. Agrupación y Suma de Totales
-            # Descartamos filas residuales de texto que se convirtieron en '0.0'
             cols_numericas = [c for c in df_final.columns if c != 'Sucursal']
             df_empleados = df_final[(df_final[cols_numericas] > 0).any(axis=1)].copy()
 
@@ -81,11 +78,11 @@ if archivo_pdf:
             # --- VISUALIZACIÓN ---
             st.success("✅ Procesamiento completado con éxito")
             
-            # Métricas rápidas en la web
             c1, c2 = st.columns(2)
             c1.metric("Total Empleados", int(resumen['Nº Empleados'].sum()))
             
-            col_liq = [c for c in resumen.columns if 'LÍQUIDO' in c.upper() or 'LIQUIDO' in c.upper()]
+            # SOLUCIÓN APLICADA AQUÍ: str(c) asegura que no dé error si la columna no tiene nombre de texto
+            col_liq = [c for c in resumen.columns if 'LÍQUIDO' in str(c).upper() or 'LIQUIDO' in str(c).upper()]
             if col_liq:
                 c2.metric("Total Líquido", f"{resumen[col_liq[0]].sum():,.2f} €")
 
@@ -98,3 +95,4 @@ if archivo_pdf:
             st.download_button("📥 Descargar Excel Agrupado", csv, "resumen_corregido.csv", "text/csv")
         else:
             st.error("No se detectó información procesable. Revisa el documento.")
+            
