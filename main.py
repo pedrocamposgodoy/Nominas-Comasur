@@ -10,68 +10,107 @@ st.set_page_config(page_title="Extractor Comasur", page_icon="📊", layout="wid
 st.title("📊 Extractor de Nóminas: Comasur SA")
 
 # -------------------------
+# CONSTANTES
+# -------------------------
+
+# Nombres de columnas numéricas en el orden en que aparecen en el PDF
+COLUMNAS_NUMERICAS = [
+    "Base C.C.",
+    "Base C.P.",
+    "Base IRPF",
+    "Deducción C.C.",
+    "Valor Especie",
+    "Otras Deducciones",
+    "Coste Cot. Empresa",
+    "Retribuciones",
+    "Retención IRPF",
+    "Otras Retenciones",
+    "Líquido",
+]
+
+# Expresión regular para detectar una fila de empleado:
+# cod  APELLIDO, NOMBRE  CENTRO  (Ord|Ext)  dias  num num num...
+PATRON_EMPLEADO = re.compile(
+    r"^(\d+)\s+"                               # código trabajador
+    r"([A-ZÁÉÍÓÚÜÑ][A-ZÁÉÍÓÚÜÑ ,\.]+?)\s+"    # nombre en mayúsculas
+    r"(COMASUR\s+\w+(?:\s+\w+)?)\s+"           # centro (ej. COMASUR MOTRIL)
+    r"(Ord|Ext)\s+"                            # tipo de jornada
+    r"(\d+)\s+"                                # días
+    r"([\d\.,]+(?:\s+[\d\.,]+)*)\s*$"          # números al final
+)
+
+
+# -------------------------
 # FUNCIONES
 # -------------------------
 
-def limpiar_monto(valor):
-    """Convierte un string con formato numérico español a float."""
-    if not valor or str(valor).strip() == "":
+def limpiar_monto(valor_str):
+    """Convierte string numérico en formato español (1.234,56) a float."""
+    s = str(valor_str).strip().replace(".", "").replace(",", ".")
+    try:
+        return float(s)
+    except ValueError:
         return 0.0
-    s = str(valor).strip().replace('.', '').replace(',', '.')
-    match = re.search(r"[-+]?\d*\.\d+|\d+", s)
-    return float(match.group()) if match else 0.0
 
 
-def es_columna_numerica(serie):
-    """Devuelve True si la columna contiene principalmente valores numéricos."""
-    no_vacias = serie[serie.astype(str).str.strip() != ""]
-    if len(no_vacias) == 0:
-        return False
-    def intenta_numero(v):
-        try:
-            s = str(v).replace('.', '').replace(',', '.')
-            match = re.search(r"[-+]?\d*\.\d+|\d+", s)
-            return match is not None
-        except Exception:
-            return False
-    ratio = no_vacias.apply(intenta_numero).mean()
-    return ratio > 0.5
-
-
-def deduplicar_columnas(columnas):
-    """Añade sufijo numérico a columnas duplicadas."""
-    nuevas = []
-    contador = {}
-    for col in columnas:
-        if col in contador:
-            contador[col] += 1
-            nuevas.append(f"{col}_{contador[col]}")
-        else:
-            contador[col] = 0
-            nuevas.append(col)
-    return nuevas
-
-
-def identificar_centro(fila_completa):
+def parsear_fila_empleado(texto):
     """
-    Busca el nombre del centro en cualquier celda de la fila.
-    Devuelve el nombre del centro o None si no lo reconoce.
+    Intenta extraer los datos de un empleado de una línea de texto.
+    Devuelve un dict con los campos o None si la línea no es de empleado.
     """
-    texto = " ".join(str(c) for c in fila_completa).upper()
-    if "MOTRIL" in texto:
-        return "COMASUR MOTRIL"
-    # Añade aquí más centros si los hay, por ejemplo:
-    # if "GRANADA" in texto:
-    #     return "COMASUR GRANADA"
-    return None
+    m = PATRON_EMPLEADO.match(texto.strip())
+    if not m:
+        return None
+
+    codigo   = m.group(1)
+    nombre   = m.group(2).strip().rstrip(",").strip()
+    centro   = m.group(3).strip()
+    tipo     = m.group(4)
+    dias     = int(m.group(5))
+    nums_str = m.group(6).split()
+
+    if len(nums_str) != len(COLUMNAS_NUMERICAS):
+        # Si el número de valores no cuadra, ignorar la fila
+        return None
+
+    fila = {
+        "Código":  codigo,
+        "Nombre":  nombre,
+        "Centro":  centro,
+        "Tipo":    tipo,
+        "Días":    dias,
+    }
+    for col, val in zip(COLUMNAS_NUMERICAS, nums_str):
+        fila[col] = limpiar_monto(val)
+
+    return fila
+
+
+def extraer_empleados_pdf(archivo):
+    """
+    Lee el PDF y devuelve una lista de dicts, uno por fila de empleado.
+    """
+    empleados = []
+
+    with pdfplumber.open(archivo) as pdf:
+        for page in pdf.pages:
+            texto = page.extract_text(x_tolerance=3, y_tolerance=3) or ""
+            for linea in texto.splitlines():
+                linea = linea.strip()
+                if not linea:
+                    continue
+                resultado = parsear_fila_empleado(linea)
+                if resultado:
+                    empleados.append(resultado)
+
+    return empleados
 
 
 # -------------------------
-# UI INICIAL
+# UI
 # -------------------------
 
 st.markdown("Sube el PDF de resumen contable para procesarlo.")
-
 archivo_pdf = st.file_uploader("Subir PDF", type="pdf")
 
 if not archivo_pdf:
@@ -83,147 +122,38 @@ if not archivo_pdf:
 # -------------------------
 
 with st.spinner("Procesando documento..."):
-    all_data = []
-
     try:
-        with pdfplumber.open(archivo_pdf) as pdf:
-            for page in pdf.pages:
-                tabla = page.extract_table() or []
-
-                for fila in tabla:
-                    if not fila or not any(fila):
-                        continue
-
-                    tiene_saltos = any('\n' in str(c) for c in fila if c)
-
-                    if tiene_saltos:
-                        lineas = [str(c).split('\n') if c else [""] for c in fila]
-                        max_len = max(len(x) for x in lineas)
-                        for i in range(max_len):
-                            nueva = [x[i].strip() if i < len(x) else "" for x in lineas]
-                            if any(nueva):
-                                all_data.append(nueva)
-                    else:
-                        all_data.append([c if c is not None else "" for c in fila])
-
+        empleados = extraer_empleados_pdf(archivo_pdf)
     except Exception as e:
         st.error(f"Error leyendo el PDF: {e}")
         st.stop()
 
-    if not all_data:
-        st.error("No se detectó información procesable en el PDF.")
+    if not empleados:
+        st.error(
+            "No se detectaron empleados en el documento. "
+            "Comprueba que el PDF es un Resumen Contable de Comasur."
+        )
         st.stop()
 
-    # Homogeneizar longitud de filas
-    max_cols = max(len(f) for f in all_data)
-    all_data = [f + [""] * (max_cols - len(f)) for f in all_data]
-
-    df = pd.DataFrame(all_data)
-
-    if len(df) <= 1:
-        st.error("El PDF no tiene estructura de tabla válida.")
-        st.stop()
-
-    # --- Cabecera ---
-    df.columns = df.iloc[0].astype(str).str.strip()
-    df = df[1:].reset_index(drop=True)
-
-    # Evitar columnas duplicadas
-    df.columns = deduplicar_columnas(list(df.columns))
-
-    col_id = df.columns[0]
-
-    # --- Limpieza de filas vacías y totales ---
-    df = df[df[col_id].astype(str).str.strip() != ""]
-    df = df[~df[col_id].astype(str).str.contains(
-        r"Total|Cuenta|Cód|Página", na=False, case=False
-    )].reset_index(drop=True)
-
-    if df.empty:
-        st.error("No quedaron filas tras el filtrado. Revisa el formato del PDF.")
-        st.stop()
-
-    # --- Detectar columnas numéricas ANTES de eliminar col_id ---
-    # (excluir col_id que es texto identificador)
-    cols_restantes = [c for c in df.columns if c != col_id]
-    cols_numericas = [c for c in cols_restantes if es_columna_numerica(df[c])]
-    cols_texto_extra = [c for c in cols_restantes if c not in cols_numericas]
-
-    # --- Asignar Sucursal buscando en toda la fila ---
-    df["Sucursal"] = df.apply(
-        lambda row: identificar_centro(row.tolist()), axis=1
-    )
-    df["Sucursal"] = df["Sucursal"].ffill().fillna("OTRO CENTRO")
-
-    # --- Eliminar columnas de texto que no aportan datos numéricos ---
-    cols_a_eliminar = [col_id] + cols_texto_extra
-    df_final = df.drop(columns=[c for c in cols_a_eliminar if c in df.columns])
-
-    # --- Convertir columnas numéricas a float ---
-    for col in cols_numericas:
-        if col in df_final.columns:
-            df_final[col] = df_final[col].apply(limpiar_monto)
-
-    # --- Filtrar empleados con al menos un valor distinto de cero ---
-    cols_num_final = [c for c in df_final.columns if c != "Sucursal"]
-
-    if not cols_num_final:
-        st.error("No se encontraron columnas numéricas en el documento.")
-        st.stop()
-
-    df_empleados = df_final[
-        df_final[cols_num_final].abs().sum(axis=1) > 0
-    ].copy()
-
-    if df_empleados.empty:
-        st.error("No se detectaron empleados con datos numéricos.")
-        st.stop()
-
-    # --- Resumen por sucursal ---
-    resumen = df_empleados.groupby("Sucursal")[cols_num_final].sum()
-    resumen.insert(0, "Nº Empleados", df_empleados.groupby("Sucursal").size())
+    df = pd.DataFrame(empleados)
 
 # -------------------------
 # RESULTADOS
 # -------------------------
 
-st.success("✅ Procesamiento completado")
+st.success(f"✅ Procesamiento completado — {df['Nombre'].nunique()} empleados detectados")
 
-c1, c2 = st.columns(2)
-c1.metric("Total Empleados", int(resumen["Nº Empleados"].sum()))
+# ---- Tabla de totales ----
+st.subheader("📋 Totales del período")
 
-# Buscar columna de líquido a pagar
-col_liq = next(
-    (c for c in resumen.columns if isinstance(c, str) and "LIQUIDO" in c.upper()),
-    None
-)
-if col_liq:
-    total_liq = resumen[col_liq].sum()
-    c2.metric("Total Líquido", f"{total_liq:,.2f} €")
+totales = df[list(COLUMNAS_NUMERICAS)].sum().rename("Total")
+totales["Nº Empleados"] = df["Nombre"].nunique()
 
-st.subheader("📋 Totales Agregados por Sucursal")
+tabla = totales.to_frame().T.set_index("Nº Empleados")
 
-# Formatear solo columnas monetarias (float), no "Nº Empleados" (int)
-cols_moneda = [c for c in resumen.columns if c != "Nº Empleados"]
+fmt = {c: "{:,.2f} €" for c in COLUMNAS_NUMERICAS}
+st.dataframe(tabla.style.format(fmt), use_container_width=True)
 
-# Aplicar formato: moneda para floats, entero para Nº Empleados
-fmt = {c: "{:,.2f} €" for c in cols_moneda}
-fmt["Nº Empleados"] = "{:,.0f}"
-
-st.dataframe(resumen.style.format(fmt))
-
-# Descargar CSV
-csv = resumen.to_csv(index=True, sep=";", decimal=",").encode("utf-8-sig")
-st.download_button(
-    label="📥 Descargar CSV",
-    data=csv,
-    file_name="resumen_nominas.csv",
-    mime="text/csv"
-)
-
-# Detalle por sucursal (expandible)
-with st.expander("🔍 Ver detalle de empleados por sucursal"):
-    for sucursal in df_empleados["Sucursal"].unique():
-        st.markdown(f"**{sucursal}**")
-        subset = df_empleados[df_empleados["Sucursal"] == sucursal][cols_num_final]
-        st.dataframe(subset.style.format("{:,.2f} €"))
+# ---- Descarga ----
+csv = totales.to_frame("Total").to_csv(sep=";", decimal=",").encode("utf-8-sig")
+st.download_button("📥 Descargar totales (CSV)", csv, "totales.csv", "text/csv")
