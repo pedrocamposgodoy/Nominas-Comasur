@@ -1,159 +1,325 @@
+# 📄 main.py
+
+```python
 import streamlit as st
 import pandas as pd
 import pdfplumber
 import re
+from io import BytesIO
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.pagesizes import A4
 
 # -------------------------
-# CONFIGURACIÓN
-# -------------------------
-st.set_page_config(page_title="Extractor Comasur", page_icon="📊", layout="wide")
-st.title("📊 Extractor de Nóminas: Comasur SA")
-
-# -------------------------
-# CONSTANTES
+# CONFIG
 # -------------------------
 
-# Nombres de columnas numéricas en el orden en que aparecen en el PDF
-COLUMNAS_NUMERICAS = [
-    "Base C.C.",
-    "Base C.P.",
-    "Base IRPF",
-    "Deducción C.C.",
-    "Valor Especie",
-    "Otras Deducciones",
-    "Coste Cot. Empresa",
-    "Retribuciones",
-    "Retención IRPF",
-    "Otras Retenciones",
-    "Líquido",
-]
-
-# Expresión regular para detectar una fila de empleado:
-# cod  APELLIDO, NOMBRE  CENTRO  (Ord|Ext)  dias  num num num...
-PATRON_EMPLEADO = re.compile(
-    r"^(\d+)\s+"                               # código trabajador
-    r"([A-ZÁÉÍÓÚÜÑ][A-ZÁÉÍÓÚÜÑ ,\.]+?)\s+"    # nombre en mayúsculas
-    r"(COMASUR\s+\w+(?:\s+\w+)?)\s+"           # centro (ej. COMASUR MOTRIL)
-    r"(Ord|Ext)\s+"                            # tipo de jornada
-    r"(\d+)\s+"                                # días
-    r"([\d\.,]+(?:\s+[\d\.,]+)*)\s*$"          # números al final
+st.set_page_config(
+    page_title="Extractor Nóminas Comasur",
+    page_icon="📊",
+    layout="wide"
 )
 
+st.title("📊 Extractor Inteligente de Nóminas")
+st.markdown("Detecta meses automáticamente y genera PDFs estructurados")
 
 # -------------------------
 # FUNCIONES
 # -------------------------
 
-def limpiar_monto(valor_str):
-    """Convierte string numérico en formato español (1.234,56) a float."""
-    s = str(valor_str).strip().replace(".", "").replace(",", ".")
-    try:
-        return float(s)
-    except ValueError:
-        return 0.0
+MESES = [
+    "ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO",
+    "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"
+]
 
 
-def parsear_fila_empleado(texto):
-    """
-    Intenta extraer los datos de un empleado de una línea de texto.
-    Devuelve un dict con los campos o None si la línea no es de empleado.
-    """
-    m = PATRON_EMPLEADO.match(texto.strip())
-    if not m:
-        return None
+def limpiar_monto(valor):
+    if not valor:
+        return valor
 
-    codigo   = m.group(1)
-    nombre   = m.group(2).strip().rstrip(",").strip()
-    centro   = m.group(3).strip()
-    tipo     = m.group(4)
-    dias     = int(m.group(5))
-    nums_str = m.group(6).split()
+    texto = str(valor).strip()
 
-    if len(nums_str) != len(COLUMNAS_NUMERICAS):
-        # Si el número de valores no cuadra, ignorar la fila
-        return None
+    if texto == "":
+        return valor
 
-    fila = {
-        "Código":  codigo,
-        "Nombre":  nombre,
-        "Centro":  centro,
-        "Tipo":    tipo,
-        "Días":    dias,
-    }
-    for col, val in zip(COLUMNAS_NUMERICAS, nums_str):
-        fila[col] = limpiar_monto(val)
+    texto = texto.replace('.', '').replace(',', '.')
 
-    return fila
+    match = re.search(r"[-+]?\d*\.\d+|\d+", texto)
+
+    if match:
+        try:
+            return float(match.group())
+        except:
+            return valor
+
+    return valor
 
 
-def extraer_empleados_pdf(archivo):
-    """
-    Lee el PDF y devuelve una lista de dicts, uno por fila de empleado.
-    """
-    empleados = []
 
-    with pdfplumber.open(archivo) as pdf:
-        for page in pdf.pages:
-            texto = page.extract_text(x_tolerance=3, y_tolerance=3) or ""
-            for linea in texto.splitlines():
-                linea = linea.strip()
-                if not linea:
-                    continue
-                resultado = parsear_fila_empleado(linea)
-                if resultado:
-                    empleados.append(resultado)
+def detectar_meses(pdf):
+    meses_detectados = {}
 
-    return empleados
+    for i, page in enumerate(pdf.pages):
+        texto = page.extract_text()
+
+        if not texto:
+            continue
+
+        texto_upper = texto.upper()
+
+        for mes in MESES:
+            if mes in texto_upper:
+                clave = mes
+
+                if clave not in meses_detectados:
+                    meses_detectados[clave] = []
+
+                meses_detectados[clave].append(i)
+
+    return meses_detectados
+
+
+
+def extraer_tablas_mes(pdf, paginas):
+    all_data = []
+
+    for pagina_num in paginas:
+        page = pdf.pages[pagina_num]
+
+        tabla = page.extract_table()
+
+        if tabla:
+            for fila in tabla:
+                if fila and any(fila):
+                    all_data.append(fila)
+
+    return all_data
+
+
+
+def deduplicar_columnas(cols):
+    nuevas = []
+    contador = {}
+
+    for col in cols:
+        col = str(col)
+
+        if col in contador:
+            contador[col] += 1
+            nuevas.append(f"{col}_{contador[col]}")
+        else:
+            contador[col] = 0
+            nuevas.append(col)
+
+    return nuevas
+
+
+
+def generar_pdf(df, mes):
+    buffer = BytesIO()
+
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=20,
+        leftMargin=20,
+        topMargin=20,
+        bottomMargin=20
+    )
+
+    elementos = []
+    styles = getSampleStyleSheet()
+
+    titulo = Paragraph(
+        f"<b>COMASUR SA - RESUMEN {mes}</b>",
+        styles['Title']
+    )
+
+    elementos.append(titulo)
+    elementos.append(Spacer(1, 20))
+
+    datos = [list(df.columns)] + df.astype(str).values.tolist()
+
+    tabla = Table(datos, repeatRows=1)
+
+    tabla.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#d9e2f3')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+    ]))
+
+    elementos.append(tabla)
+
+    doc.build(elementos)
+
+    buffer.seek(0)
+
+    return buffer
 
 
 # -------------------------
 # UI
 # -------------------------
 
-st.markdown("Sube el PDF de resumen contable para procesarlo.")
-archivo_pdf = st.file_uploader("Subir PDF", type="pdf")
+archivo_pdf = st.file_uploader(
+    "Sube el PDF de nóminas",
+    type="pdf"
+)
 
 if not archivo_pdf:
-    st.info("👆 Sube un PDF para comenzar")
+    st.info("👆 Sube un PDF multiperiodo")
     st.stop()
 
+
 # -------------------------
-# PROCESAMIENTO
+# PROCESAR PDF
 # -------------------------
 
-with st.spinner("Procesando documento..."):
+with st.spinner("Analizando PDF..."):
+
     try:
-        empleados = extraer_empleados_pdf(archivo_pdf)
+        pdf = pdfplumber.open(archivo_pdf)
+
     except Exception as e:
-        st.error(f"Error leyendo el PDF: {e}")
+        st.error(f"Error abriendo PDF: {e}")
         st.stop()
 
-    if not empleados:
-        st.error(
-            "No se detectaron empleados en el documento. "
-            "Comprueba que el PDF es un Resumen Contable de Comasur."
-        )
+    meses_detectados = detectar_meses(pdf)
+
+    if not meses_detectados:
+        st.error("❌ No se detectaron meses automáticamente")
         st.stop()
 
-    df = pd.DataFrame(empleados)
 
 # -------------------------
-# RESULTADOS
+# SELECCIÓN MES
 # -------------------------
 
-st.success(f"✅ Procesamiento completado — {df['Nombre'].nunique()} empleados detectados")
+st.success("✅ Meses detectados correctamente")
 
-# ---- Tabla de totales ----
-st.subheader("📋 Totales del período")
+meses_lista = list(meses_detectados.keys())
 
-totales = df[list(COLUMNAS_NUMERICAS)].sum().rename("Total")
-totales["Nº Empleados"] = df["Nombre"].nunique()
+mes_seleccionado = st.selectbox(
+    "Selecciona el mes a procesar",
+    meses_lista
+)
 
-tabla = totales.to_frame().T.set_index("Nº Empleados")
+paginas_mes = meses_detectados[mes_seleccionado]
 
-fmt = {c: "{:,.2f} €" for c in COLUMNAS_NUMERICAS}
-st.dataframe(tabla.style.format(fmt), use_container_width=True)
+st.write(f"📄 Páginas detectadas: {', '.join(str(p + 1) for p in paginas_mes)}")
 
-# ---- Descarga ----
-csv = totales.to_frame("Total").to_csv(sep=";", decimal=",").encode("utf-8-sig")
-st.download_button("📥 Descargar totales (CSV)", csv, "totales.csv", "text/csv")
+
+# -------------------------
+# EXTRAER TABLAS
+# -------------------------
+
+with st.spinner("Extrayendo tablas del mes..."):
+
+    datos = extraer_tablas_mes(pdf, paginas_mes)
+
+    if not datos:
+        st.error("❌ No se detectaron tablas")
+        st.stop()
+
+    df = pd.DataFrame(datos)
+
+    if len(df) < 2:
+        st.error("❌ No hay estructura suficiente")
+        st.stop()
+
+    df.columns = df.iloc[0].astype(str)
+    df = df[1:]
+
+    df.columns = deduplicar_columnas(df.columns)
+
+    df = df.dropna(how='all')
+
+    # Limpiar números donde sea posible
+    for col in df.columns:
+        df[col] = df[col].apply(limpiar_monto)
+
+
+# -------------------------
+# VISUALIZAR
+# -------------------------
+
+st.subheader(f"📋 Datos detectados - {mes_seleccionado}")
+
+st.dataframe(df, use_container_width=True)
+
+
+# -------------------------
+# GENERAR PDF
+# -------------------------
+
+pdf_generado = generar_pdf(df, mes_seleccionado)
+
+st.download_button(
+    label="📥 Descargar PDF estructurado",
+    data=pdf_generado,
+    file_name=f"nominas_{mes_seleccionado.lower()}.pdf",
+    mime="application/pdf"
+)
+```
+
+---
+
+# 📄 requirements.txt
+
+```txt
+streamlit==1.35.0
+pandas==2.2.2
+pdfplumber==0.11.4
+reportlab==4.2.0
+Pillow
+```
+
+---
+
+# 📄 runtime.txt
+
+```txt
+python-3.11
+```
+
+---
+
+# 📄 .gitignore
+
+```txt
+*.pyc
+__pycache__/
+.streamlit/
+.env
+venv/
+```
+
+---
+
+# 🚀 ESTRUCTURA FINAL DEL REPO
+
+```text
+/nominas-comasur
+│
+├── main.py
+├── requirements.txt
+├── runtime.txt
+├── .gitignore
+```
+
+---
+
+# ✅ QUÉ HACE ESTA VERSIÓN
+
+* Detecta automáticamente los meses del PDF
+* Permite elegir el mes
+* Extrae solo ese bloque
+* Mantiene las columnas originales
+* Genera un PDF estructurado profesional
+* Compatible con Streamlit Cloud
+* Compatible con Python 3.11
