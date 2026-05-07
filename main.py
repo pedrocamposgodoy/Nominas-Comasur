@@ -1,6 +1,6 @@
 import streamlit as st
-import pdfplumber
 import pandas as pd
+import pdfplumber
 import re
 from io import BytesIO
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
@@ -10,166 +10,143 @@ from reportlab.lib.pagesizes import landscape, A4
 
 st.set_page_config(page_title="Nóminas COMASUR", layout="wide")
 
-MESES = [
-    "ENERO", "FEBRERO", "MARZO", "ABRIL",
-    "MAYO", "JUNIO", "JULIO", "AGOSTO",
-    "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"
-]
+# =========================
+# COLUMNAS REALES
+# =========================
 
 COLUMNAS = [
-    "Código",
-    "Apellidos",
+    "Codigo",
+    "Apellido_1",
+    "Apellido_2",
     "Nombre",
     "Empresa",
     "Centro",
     "Tipo",
-    "Días",
-    "Devengo",
-    "Base",
-    "Cotización",
-    "SS",
+    "Dias",
+    "Devengado",
+    "Base_SS",
+    "Base_IRPF",
     "IRPF",
-    "Otros",
-    "Líquido"
+    "Extra_1",
+    "Extra_2",
+    "Seg_Social",
+    "Liquido",
+    "Coste_SS",
+    "Retencion",
+    "Anticipo",
+    "Total"
 ]
 
-st.title("📄 Analizador de Nóminas COMASUR")
+MESES = [
+    "ENERO",
+    "FEBRERO",
+    "MARZO",
+    "ABRIL",
+    "MAYO",
+    "JUNIO",
+    "JULIO",
+    "AGOSTO",
+    "SEPTIEMBRE",
+    "OCTUBRE",
+    "NOVIEMBRE",
+    "DICIEMBRE"
+]
 
-uploaded_file = st.file_uploader(
-    "Sube PDF de nóminas",
-    type="pdf"
-)
+# =========================
+# FUNCIONES
+# =========================
 
-def extraer_texto(pdf_file):
-    texto = ""
-
-    with pdfplumber.open(pdf_file) as pdf:
-        for pagina in pdf.pages:
-            contenido = pagina.extract_text()
-            if contenido:
-                texto += contenido + "\n"
-
-    return texto
-
-def detectar_meses(texto):
-    encontrados = []
-
-    for mes in MESES:
-        if mes in texto.upper():
-            encontrados.append(mes)
-
-    return list(dict.fromkeys(encontrados))
-
-def extraer_bloque_mes(texto, mes):
-    texto = texto.upper()
-
-    inicio = texto.find(mes)
-
-    if inicio == -1:
-        return ""
-
-    siguiente = len(texto)
-
-    for m in MESES:
-        if m == mes:
-            continue
-
-        pos = texto.find(m, inicio + 10)
-
-        if pos != -1 and pos < siguiente:
-            siguiente = pos
-
-    return texto[inicio:siguiente]
+def limpiar_texto(texto):
+    texto = texto.replace("\n", " ")
+    texto = re.sub(r"\s+", " ", texto)
+    return texto.strip()
 
 def es_numero(valor):
-    return bool(re.match(r"^\d+[.,]?\d*$", valor))
+    return bool(re.match(r"^[\d\.,]+$", valor))
 
-def parsear_linea(linea):
+def extraer_datos(pdf_file):
 
-    linea = re.sub(r"\s+", " ", linea).strip()
+    registros = []
 
-    partes = linea.split()
+    with pdfplumber.open(pdf_file) as pdf:
 
-    if len(partes) < 15:
-        return None
+        for pagina in pdf.pages:
 
-    if not partes[0].isdigit():
-        return None
+            texto = pagina.extract_text()
 
-    try:
+            if not texto:
+                continue
 
-        codigo = partes[0]
+            lineas = texto.split("\n")
 
-        tipo_idx = None
+            for linea in lineas:
 
-        for i, p in enumerate(partes):
-            if p in ["ORD", "EXT"]:
-                tipo_idx = i
-                break
+                linea = limpiar_texto(linea)
 
-        if tipo_idx is None:
-            return None
+                if len(linea) < 20:
+                    continue
 
-        empresa = partes[tipo_idx - 2]
-        centro = partes[tipo_idx - 1]
+                partes = linea.split()
 
-        nombre_partes = partes[1:tipo_idx - 2]
+                if len(partes) < 10:
+                    continue
 
-        if len(nombre_partes) < 2:
-            return None
+                # Buscar primer número = código trabajador
+                if not partes[0].isdigit():
+                    continue
 
-        apellidos = " ".join(nombre_partes[:-1])
-        nombre = nombre_partes[-1]
+                codigo = partes[0]
 
-        tipo = partes[tipo_idx]
+                # Buscar números monetarios
+                numeros = [p for p in partes if es_numero(p)]
 
-        dias = partes[tipo_idx + 1]
+                if len(numeros) < 8:
+                    continue
 
-        numeros = partes[tipo_idx + 2:]
+                try:
 
-        numeros = [n for n in numeros if re.search(r"\d", n)]
+                    apellido_1 = partes[1]
+                    apellido_2 = partes[2]
+                    nombre = partes[3]
 
-        if len(numeros) < 10:
-            return None
+                    empresa = "COMASUR"
 
-        fila = {
-            "Código": codigo,
-            "Apellidos": apellidos,
-            "Nombre": nombre,
-            "Empresa": empresa,
-            "Centro": centro,
-            "Tipo": tipo,
-            "Días": dias,
-            "Devengo": numeros[0],
-            "Base": numeros[1],
-            "Cotización": numeros[2],
-            "SS": numeros[3],
-            "IRPF": numeros[6],
-            "Otros": numeros[8],
-            "Líquido": numeros[-1]
-        }
+                    centro = "MOTRIL"
 
-        return fila
+                    tipo = "Ord"
 
-    except:
-        return None
+                    dias = numeros[0]
 
-def extraer_datos(texto_mes):
+                    monetarios = numeros[1:]
 
-    filas = []
+                    fila = [
+                        codigo,
+                        apellido_1,
+                        apellido_2,
+                        nombre,
+                        empresa,
+                        centro,
+                        tipo,
+                        dias
+                    ]
 
-    lineas = texto_mes.split("\n")
+                    while len(monetarios) < 12:
+                        monetarios.append("0,00")
 
-    for linea in lineas:
+                    fila.extend(monetarios[:12])
 
-        fila = parsear_linea(linea)
+                    registros.append(fila)
 
-        if fila:
-            filas.append(fila)
+                except:
+                    pass
 
-    df = pd.DataFrame(filas)
+    if len(registros) == 0:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(registros, columns=COLUMNAS)
 
     return df
+
 
 def generar_pdf(df, mes):
 
@@ -177,30 +154,44 @@ def generar_pdf(df, mes):
 
     doc = SimpleDocTemplate(
         buffer,
-        pagesize=landscape(A4)
+        pagesize=landscape(A4),
+        rightMargin=15,
+        leftMargin=15,
+        topMargin=15,
+        bottomMargin=15
     )
 
     elementos = []
 
-    styles = getSampleStyleSheet()
+    estilos = getSampleStyleSheet()
 
-    titulo = Paragraph(
-        f"<b>COMASUR SA - RESUMEN {mes}</b>",
-        styles["Heading1"]
-    )
+    titulo = Paragraph(f"<b>NÓMINAS {mes}</b>", estilos["Title"])
 
     elementos.append(titulo)
     elementos.append(Spacer(1, 12))
 
-    data = [df.columns.tolist()] + df.values.tolist()
+    if df.empty:
+        texto = Paragraph("No hay datos para generar el PDF", estilos["BodyText"])
+        elementos.append(texto)
 
-    tabla = Table(data)
+        doc.build(elementos)
+
+        buffer.seek(0)
+
+        return buffer
+
+    # Tabla PDF
+    data = [list(df.columns)] + df.values.tolist()
+
+    tabla = Table(data, repeatRows=1)
 
     tabla.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.darkblue),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
         ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
         ("FONTSIZE", (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
         ("BACKGROUND", (0, 1), (-1, -1), colors.beige),
     ]))
 
@@ -208,39 +199,60 @@ def generar_pdf(df, mes):
 
     doc.build(elementos)
 
-    pdf = buffer.getvalue()
-    buffer.close()
+    buffer.seek(0)
 
-    return pdf
+    return buffer
 
-if uploaded_file:
+# =========================
+# INTERFAZ
+# =========================
 
-    texto = extraer_texto(uploaded_file)
+st.title("📋 Gestión Nóminas COMASUR")
 
-    meses = detectar_meses(texto)
+mes_seleccionado = st.selectbox(
+    "Seleccione mes",
+    MESES
+)
 
-    if not meses:
-        st.error("No se detectaron meses")
-        st.stop()
+archivo = st.file_uploader(
+    "Suba PDF de nóminas",
+    type=["pdf"]
+)
 
-    mes_seleccionado = st.selectbox(
-        "Selecciona mes",
-        meses
-    )
+if archivo:
 
-    bloque_mes = extraer_bloque_mes(texto, mes_seleccionado)
+    with st.spinner("Procesando PDF..."):
 
-    df = extraer_datos(bloque_mes)
+        df = extraer_datos(archivo)
 
-    st.subheader(f"📋 Datos detectados - {mes_seleccionado}")
+    st.subheader(f"Datos detectados - {mes_seleccionado}")
 
-    st.dataframe(df, use_container_width=True)
+    if df.empty:
 
-    pdf = generar_pdf(df, mes_seleccionado)
+        st.error("No se pudieron extraer datos válidos.")
 
-    st.download_button(
-        "📥 Descargar PDF estructurado",
-        data=pdf,
-        file_name=f"nominas_{mes_seleccionado.lower()}.pdf",
-        mime="application/pdf"
-    )
+    else:
+
+        st.dataframe(
+            df,
+            use_container_width=True,
+            height=500
+        )
+
+        pdf_generado = generar_pdf(df, mes_seleccionado)
+
+        st.download_button(
+            label="📥 Descargar PDF estructurado",
+            data=pdf_generado,
+            file_name=f"nominas_{mes_seleccionado.lower()}.pdf",
+            mime="application/pdf"
+        )
+
+        csv = df.to_csv(index=False).encode("utf-8")
+
+        st.download_button(
+            label="📥 Descargar CSV",
+            data=csv,
+            file_name=f"nominas_{mes_seleccionado.lower()}.csv",
+            mime="text/csv"
+        )
