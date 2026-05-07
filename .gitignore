@@ -1,8 +1,5 @@
 *.pyc
 __pycache__/
-.streamlit/secrets.toml
+.streamlit/
 .env
 venv/
-.venv/
-*.egg-info/
-dist/
