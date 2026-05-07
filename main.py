@@ -1,138 +1,175 @@
 import streamlit as st
-import pandas as pd
 import pdfplumber
+import pandas as pd
 import re
 from io import BytesIO
-from reportlab.platypus import (
-    SimpleDocTemplate,
-    Table,
-    TableStyle,
-    Paragraph,
-    Spacer
-)
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.lib.pagesizes import A4
+from reportlab.lib.pagesizes import landscape, A4
 
-# ------------------------------------------------
-# CONFIGURACIÓN
-# ------------------------------------------------
-
-st.set_page_config(
-    page_title="Extractor Nóminas Comasur",
-    page_icon="📊",
-    layout="wide"
-)
-
-st.title("📊 Extractor Inteligente de Nóminas")
-st.markdown(
-    "Detecta meses automáticamente y genera PDFs estructurados"
-)
-
-# ------------------------------------------------
-# MESES
-# ------------------------------------------------
+st.set_page_config(page_title="Nóminas COMASUR", layout="wide")
 
 MESES = [
-    "ENERO",
-    "FEBRERO",
-    "MARZO",
-    "ABRIL",
-    "MAYO",
-    "JUNIO",
-    "JULIO",
-    "AGOSTO",
-    "SEPTIEMBRE",
-    "OCTUBRE",
-    "NOVIEMBRE",
-    "DICIEMBRE"
+    "ENERO", "FEBRERO", "MARZO", "ABRIL",
+    "MAYO", "JUNIO", "JULIO", "AGOSTO",
+    "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"
 ]
 
-# ------------------------------------------------
-# FUNCIONES
-# ------------------------------------------------
+COLUMNAS = [
+    "Código",
+    "Apellidos",
+    "Nombre",
+    "Empresa",
+    "Centro",
+    "Tipo",
+    "Días",
+    "Devengo",
+    "Base",
+    "Cotización",
+    "SS",
+    "IRPF",
+    "Otros",
+    "Líquido"
+]
 
-def detectar_meses(pdf):
+st.title("📄 Analizador de Nóminas COMASUR")
 
-    meses_detectados = {}
+uploaded_file = st.file_uploader(
+    "Sube PDF de nóminas",
+    type="pdf"
+)
 
-    for i, page in enumerate(pdf.pages):
+def extraer_texto(pdf_file):
+    texto = ""
 
-        texto = page.extract_text()
+    with pdfplumber.open(pdf_file) as pdf:
+        for pagina in pdf.pages:
+            contenido = pagina.extract_text()
+            if contenido:
+                texto += contenido + "\n"
 
-        if not texto:
-            continue
+    return texto
 
-        texto = texto.upper()
+def detectar_meses(texto):
+    encontrados = []
 
-        for mes in MESES:
+    for mes in MESES:
+        if mes in texto.upper():
+            encontrados.append(mes)
 
-            if mes in texto:
+    return list(dict.fromkeys(encontrados))
 
-                if mes not in meses_detectados:
-                    meses_detectados[mes] = []
+def extraer_bloque_mes(texto, mes):
+    texto = texto.upper()
 
-                meses_detectados[mes].append(i)
+    inicio = texto.find(mes)
 
-    return meses_detectados
-
-
-def limpiar_texto(texto):
-
-    if texto is None:
+    if inicio == -1:
         return ""
 
-    texto = str(texto)
+    siguiente = len(texto)
 
-    texto = texto.replace("\n", " ")
-    texto = texto.replace("  ", " ")
-
-    return texto.strip()
-
-
-# ------------------------------------------------
-# EXTRACCIÓN REAL
-# ------------------------------------------------
-
-def extraer_tablas_mes(pdf, paginas):
-
-    registros = []
-
-    for pagina_num in paginas:
-
-        page = pdf.pages[pagina_num]
-
-        texto = page.extract_text()
-
-        if not texto:
+    for m in MESES:
+        if m == mes:
             continue
 
-        lineas = texto.split("\n")
+        pos = texto.find(m, inicio + 10)
 
-        for linea in lineas:
+        if pos != -1 and pos < siguiente:
+            siguiente = pos
 
-            linea = limpiar_texto(linea)
+    return texto[inicio:siguiente]
 
-            if len(linea) < 20:
-                continue
+def es_numero(valor):
+    return bool(re.match(r"^\d+[.,]?\d*$", valor))
 
-            # Detecta línea de empleado
-            if re.match(r"^\d+\s+[A-ZÁÉÍÓÚÑ]", linea):
+def parsear_linea(linea):
 
-                # Separar bloques grandes
-                partes = re.split(r"\s{2,}", linea)
+    linea = re.sub(r"\s+", " ", linea).strip()
 
-                if len(partes) == 1:
-                    partes = linea.split()
+    partes = linea.split()
 
-                registros.append(partes)
+    if len(partes) < 15:
+        return None
 
-    return registros
+    if not partes[0].isdigit():
+        return None
 
+    try:
 
-# ------------------------------------------------
-# PDF
-# ------------------------------------------------
+        codigo = partes[0]
+
+        tipo_idx = None
+
+        for i, p in enumerate(partes):
+            if p in ["ORD", "EXT"]:
+                tipo_idx = i
+                break
+
+        if tipo_idx is None:
+            return None
+
+        empresa = partes[tipo_idx - 2]
+        centro = partes[tipo_idx - 1]
+
+        nombre_partes = partes[1:tipo_idx - 2]
+
+        if len(nombre_partes) < 2:
+            return None
+
+        apellidos = " ".join(nombre_partes[:-1])
+        nombre = nombre_partes[-1]
+
+        tipo = partes[tipo_idx]
+
+        dias = partes[tipo_idx + 1]
+
+        numeros = partes[tipo_idx + 2:]
+
+        numeros = [n for n in numeros if re.search(r"\d", n)]
+
+        if len(numeros) < 10:
+            return None
+
+        fila = {
+            "Código": codigo,
+            "Apellidos": apellidos,
+            "Nombre": nombre,
+            "Empresa": empresa,
+            "Centro": centro,
+            "Tipo": tipo,
+            "Días": dias,
+            "Devengo": numeros[0],
+            "Base": numeros[1],
+            "Cotización": numeros[2],
+            "SS": numeros[3],
+            "IRPF": numeros[6],
+            "Otros": numeros[8],
+            "Líquido": numeros[-1]
+        }
+
+        return fila
+
+    except:
+        return None
+
+def extraer_datos(texto_mes):
+
+    filas = []
+
+    lineas = texto_mes.split("\n")
+
+    for linea in lineas:
+
+        fila = parsear_linea(linea)
+
+        if fila:
+            filas.append(fila)
+
+    df = pd.DataFrame(filas)
+
+    return df
 
 def generar_pdf(df, mes):
 
@@ -140,11 +177,7 @@ def generar_pdf(df, mes):
 
     doc = SimpleDocTemplate(
         buffer,
-        pagesize=A4,
-        rightMargin=20,
-        leftMargin=20,
-        topMargin=20,
-        bottomMargin=20
+        pagesize=landscape(A4)
     )
 
     elementos = []
@@ -153,149 +186,61 @@ def generar_pdf(df, mes):
 
     titulo = Paragraph(
         f"<b>COMASUR SA - RESUMEN {mes}</b>",
-        styles["Title"]
+        styles["Heading1"]
     )
 
     elementos.append(titulo)
-    elementos.append(Spacer(1, 20))
+    elementos.append(Spacer(1, 12))
 
-    datos = [list(df.columns)] + df.astype(str).values.tolist()
+    data = [df.columns.tolist()] + df.values.tolist()
 
-    tabla = Table(datos, repeatRows=1)
+    tabla = Table(data)
 
     tabla.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#d9e2f3")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
-        ("GRID", (0, 0), (-1, -1), 1, colors.black),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("BACKGROUND", (0, 0), (-1, 0), colors.darkblue),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
         ("FONTSIZE", (0, 0), (-1, -1), 7),
-        ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
-        ("BACKGROUND", (0, 1), (-1, -1), colors.white),
+        ("BACKGROUND", (0, 1), (-1, -1), colors.beige),
     ]))
 
     elementos.append(tabla)
 
     doc.build(elementos)
 
-    buffer.seek(0)
+    pdf = buffer.getvalue()
+    buffer.close()
 
-    return buffer
+    return pdf
 
+if uploaded_file:
 
-# ------------------------------------------------
-# SUBIR PDF
-# ------------------------------------------------
+    texto = extraer_texto(uploaded_file)
 
-archivo_pdf = st.file_uploader(
-    "Sube el PDF de nóminas",
-    type="pdf"
-)
+    meses = detectar_meses(texto)
 
-if not archivo_pdf:
-
-    st.info("👆 Sube un PDF multiperiodo")
-    st.stop()
-
-# ------------------------------------------------
-# ANALIZAR PDF
-# ------------------------------------------------
-
-with st.spinner("Analizando PDF..."):
-
-    try:
-
-        pdf = pdfplumber.open(archivo_pdf)
-
-    except Exception as e:
-
-        st.error(f"Error abriendo PDF: {e}")
+    if not meses:
+        st.error("No se detectaron meses")
         st.stop()
 
-    meses_detectados = detectar_meses(pdf)
-
-    if not meses_detectados:
-
-        st.error("❌ No se detectaron meses automáticamente")
-        st.stop()
-
-# ------------------------------------------------
-# SELECCIÓN MES
-# ------------------------------------------------
-
-st.success("✅ Meses detectados correctamente")
-
-meses_lista = list(meses_detectados.keys())
-
-mes_seleccionado = st.selectbox(
-    "Selecciona el mes a procesar",
-    meses_lista
-)
-
-paginas_mes = meses_detectados[mes_seleccionado]
-
-st.write(
-    f"📄 Páginas detectadas: "
-    f"{', '.join(str(p + 1) for p in paginas_mes)}"
-)
-
-# ------------------------------------------------
-# EXTRAER DATOS
-# ------------------------------------------------
-
-with st.spinner("Extrayendo datos del mes..."):
-
-    datos = extraer_tablas_mes(
-        pdf,
-        paginas_mes
+    mes_seleccionado = st.selectbox(
+        "Selecciona mes",
+        meses
     )
 
-    if not datos:
+    bloque_mes = extraer_bloque_mes(texto, mes_seleccionado)
 
-        st.error("❌ No se encontraron registros")
-        st.stop()
+    df = extraer_datos(bloque_mes)
 
-    max_cols = max(len(fila) for fila in datos)
+    st.subheader(f"📋 Datos detectados - {mes_seleccionado}")
 
-    datos_normalizados = [
-        fila + [""] * (max_cols - len(fila))
-        for fila in datos
-    ]
+    st.dataframe(df, use_container_width=True)
 
-    columnas = [
-        f"Campo_{i+1}"
-        for i in range(max_cols)
-    ]
+    pdf = generar_pdf(df, mes_seleccionado)
 
-    df = pd.DataFrame(
-        datos_normalizados,
-        columns=columnas
+    st.download_button(
+        "📥 Descargar PDF estructurado",
+        data=pdf,
+        file_name=f"nominas_{mes_seleccionado.lower()}.pdf",
+        mime="application/pdf"
     )
-
-# ------------------------------------------------
-# VISUALIZAR
-# ------------------------------------------------
-
-st.subheader(
-    f"📋 Datos detectados - {mes_seleccionado}"
-)
-
-st.dataframe(
-    df,
-    use_container_width=True
-)
-
-# ------------------------------------------------
-# GENERAR PDF
-# ------------------------------------------------
-
-pdf_generado = generar_pdf(
-    df,
-    mes_seleccionado
-)
-
-st.download_button(
-    label="📥 Descargar PDF estructurado",
-    data=pdf_generado,
-    file_name=f"nominas_{mes_seleccionado.lower()}.pdf",
-    mime="application/pdf"
-)
