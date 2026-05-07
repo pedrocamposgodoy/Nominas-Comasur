@@ -14,9 +14,9 @@ from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.pagesizes import A4
 
-# -------------------------
-# CONFIG
-# -------------------------
+# ------------------------------------------------
+# CONFIGURACIÓN
+# ------------------------------------------------
 
 st.set_page_config(
     page_title="Extractor Nóminas Comasur",
@@ -29,9 +29,9 @@ st.markdown(
     "Detecta meses automáticamente y genera PDFs estructurados"
 )
 
-# -------------------------
+# ------------------------------------------------
 # MESES
-# -------------------------
+# ------------------------------------------------
 
 MESES = [
     "ENERO",
@@ -48,33 +48,9 @@ MESES = [
     "DICIEMBRE"
 ]
 
-# -------------------------
+# ------------------------------------------------
 # FUNCIONES
-# -------------------------
-
-def limpiar_monto(valor):
-
-    if valor is None:
-        return valor
-
-    texto = str(valor).strip()
-
-    if texto == "":
-        return valor
-
-    texto = texto.replace(".", "")
-    texto = texto.replace(",", ".")
-
-    match = re.search(r"[-+]?\d*\.\d+|\d+", texto)
-
-    if match:
-        try:
-            return float(match.group())
-        except:
-            return valor
-
-    return valor
-
+# ------------------------------------------------
 
 def detectar_meses(pdf):
 
@@ -87,11 +63,11 @@ def detectar_meses(pdf):
         if not texto:
             continue
 
-        texto_upper = texto.upper()
+        texto = texto.upper()
 
         for mes in MESES:
 
-            if mes in texto_upper:
+            if mes in texto:
 
                 if mes not in meses_detectados:
                     meses_detectados[mes] = []
@@ -101,44 +77,62 @@ def detectar_meses(pdf):
     return meses_detectados
 
 
+def limpiar_texto(texto):
+
+    if texto is None:
+        return ""
+
+    texto = str(texto)
+
+    texto = texto.replace("\n", " ")
+    texto = texto.replace("  ", " ")
+
+    return texto.strip()
+
+
+# ------------------------------------------------
+# EXTRACCIÓN REAL
+# ------------------------------------------------
+
 def extraer_tablas_mes(pdf, paginas):
 
-    all_data = []
+    registros = []
 
     for pagina_num in paginas:
 
         page = pdf.pages[pagina_num]
 
-        tabla = page.extract_table()
+        texto = page.extract_text()
 
-        if tabla:
+        if not texto:
+            continue
 
-            for fila in tabla:
+        lineas = texto.split("\n")
 
-                if fila and any(fila):
-                    all_data.append(fila)
+        for linea in lineas:
 
-    return all_data
+            linea = limpiar_texto(linea)
+
+            if len(linea) < 20:
+                continue
+
+            # Detecta línea de empleado
+            if re.match(r"^\d+\s+[A-ZÁÉÍÓÚÑ]", linea):
+
+                # Separar bloques grandes
+                partes = re.split(r"\s{2,}", linea)
+
+                if len(partes) == 1:
+                    partes = linea.split()
+
+                registros.append(partes)
+
+    return registros
 
 
-def deduplicar_columnas(columnas):
-
-    nuevas = []
-    contador = {}
-
-    for col in columnas:
-
-        col = str(col)
-
-        if col in contador:
-            contador[col] += 1
-            nuevas.append(f"{col}_{contador[col]}")
-        else:
-            contador[col] = 0
-            nuevas.append(col)
-
-    return nuevas
-
+# ------------------------------------------------
+# PDF
+# ------------------------------------------------
 
 def generar_pdf(df, mes):
 
@@ -174,7 +168,7 @@ def generar_pdf(df, mes):
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
         ("GRID", (0, 0), (-1, -1), 1, colors.black),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("FONTSIZE", (0, 0), (-1, -1), 7),
         ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
         ("BACKGROUND", (0, 1), (-1, -1), colors.white),
     ]))
@@ -188,9 +182,9 @@ def generar_pdf(df, mes):
     return buffer
 
 
-# -------------------------
+# ------------------------------------------------
 # SUBIR PDF
-# -------------------------
+# ------------------------------------------------
 
 archivo_pdf = st.file_uploader(
     "Sube el PDF de nóminas",
@@ -202,9 +196,9 @@ if not archivo_pdf:
     st.info("👆 Sube un PDF multiperiodo")
     st.stop()
 
-# -------------------------
-# PROCESAR PDF
-# -------------------------
+# ------------------------------------------------
+# ANALIZAR PDF
+# ------------------------------------------------
 
 with st.spinner("Analizando PDF..."):
 
@@ -224,9 +218,9 @@ with st.spinner("Analizando PDF..."):
         st.error("❌ No se detectaron meses automáticamente")
         st.stop()
 
-# -------------------------
+# ------------------------------------------------
 # SELECCIÓN MES
-# -------------------------
+# ------------------------------------------------
 
 st.success("✅ Meses detectados correctamente")
 
@@ -244,42 +238,42 @@ st.write(
     f"{', '.join(str(p + 1) for p in paginas_mes)}"
 )
 
-# -------------------------
-# EXTRAER TABLAS
-# -------------------------
+# ------------------------------------------------
+# EXTRAER DATOS
+# ------------------------------------------------
 
-with st.spinner("Extrayendo tablas del mes..."):
+with st.spinner("Extrayendo datos del mes..."):
 
-    datos = extraer_tablas_mes(pdf, paginas_mes)
+    datos = extraer_tablas_mes(
+        pdf,
+        paginas_mes
+    )
 
     if not datos:
 
-        st.error("❌ No se detectaron tablas")
+        st.error("❌ No se encontraron registros")
         st.stop()
 
-    df = pd.DataFrame(datos)
+    max_cols = max(len(fila) for fila in datos)
 
-    if len(df) < 2:
+    datos_normalizados = [
+        fila + [""] * (max_cols - len(fila))
+        for fila in datos
+    ]
 
-        st.error("❌ No hay estructura suficiente")
-        st.stop()
+    columnas = [
+        f"Campo_{i+1}"
+        for i in range(max_cols)
+    ]
 
-    df.columns = df.iloc[0].astype(str)
+    df = pd.DataFrame(
+        datos_normalizados,
+        columns=columnas
+    )
 
-    df = df[1:]
-
-    df.columns = deduplicar_columnas(df.columns)
-
-    df = df.dropna(how="all")
-
-    # Limpiar números
-    for col in df.columns:
-
-        df[col] = df[col].apply(limpiar_monto)
-
-# -------------------------
+# ------------------------------------------------
 # VISUALIZAR
-# -------------------------
+# ------------------------------------------------
 
 st.subheader(
     f"📋 Datos detectados - {mes_seleccionado}"
@@ -290,9 +284,9 @@ st.dataframe(
     use_container_width=True
 )
 
-# -------------------------
+# ------------------------------------------------
 # GENERAR PDF
-# -------------------------
+# ------------------------------------------------
 
 pdf_generado = generar_pdf(
     df,
