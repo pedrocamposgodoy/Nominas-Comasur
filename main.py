@@ -241,23 +241,16 @@ def generar_pdf_ejecutivo(datos_meses, empresa="COMASUR", centro="MOTRIL"):
     
     meses_ordenados = sorted(datos_meses.keys(), key=lambda x: MESES_ES[x])
     
-    # Tabla única horizontal con TODAS las columnas organizadas inteligentemente
-    # Usar abreviaturas y diseño compacto
+    # Tabla única horizontal con el ORDEN EXACTO del PDF original
     datos_tabla = [[
         # Identificación
-        "Mes", "Emp.",
-        # Tipos nómina
-        "Ord", "Ext",
-        # Bases oficiales (grupo 1)
-        "Base\nC.C.", "Base\nC.P.", "Base\nIRPF",
-        # Retribuciones
-        "Retrib.\nTotal",
-        # Deducciones (grupo 2)
-        "SS\nTrab.", "SS\nEmp.", "IRPF",
-        # Otros conceptos
-        "Val.\nEsp.", "Ded.\nAdic.", "Otras\nRet.",
-        # Resultado final
-        "Líquido", "Coste\nTotal"
+        "Mes", "Emp.", "Ord", "Ext",
+        # ORDEN EXACTO DEL PDF ORIGINAL:
+        "Base\nC.C.", "Base\nC.P.", "Base\nIRPF", "Val.\nEsp.",
+        "Deduc.", "Costes\nEmp.", "Ret.\nIRPF", "Otras\nRet.",
+        "Retrib.", "Líquido",
+        # Calculados:
+        "Ded.\nAdic.", "Coste\nTotal"
     ]]
     
     for mes in meses_ordenados:
@@ -265,21 +258,23 @@ def generar_pdf_ejecutivo(datos_meses, empresa="COMASUR", centro="MOTRIL"):
         coste_total = calcular_coste_total_empresa(datos)
         
         datos_tabla.append([
-            mes[:3].upper(),  # Abreviar mes (ENE, FEB, MAR...)
+            mes[:3].upper(),
             str(datos["empleados"]),
             str(datos["nominas_ordinarias"]),
             str(datos["nominas_extraordinarias"]),
+            # ORDEN EXACTO DEL PDF:
             f"{datos['base_cc']:,.2f}",
             f"{datos['base_cp']:,.2f}",
             f"{datos['base_irpf']:,.2f}",
-            f"{datos['retribuciones']:,.2f}",
+            f"{datos['valor_especie']:,.2f}",
             f"{datos['deduccion_ss_trabajador']:,.2f}",
             f"{datos['coste_ss_empresa']:,.2f}",
             f"{datos['retencion_irpf']:,.2f}",
-            f"{datos['valor_especie']:,.2f}",
-            f"{datos['deducciones_adicionales']:,.2f}",
             f"{datos['otras_retenciones']:,.2f}",
+            f"{datos['retribuciones']:,.2f}",
             f"{datos['liquido']:,.2f}",
+            # Adicionales:
+            f"{datos['deducciones_adicionales']:,.2f}",
             f"{coste_total:,.2f}"
         ])
     
@@ -306,38 +301,40 @@ def generar_pdf_ejecutivo(datos_meses, empresa="COMASUR", centro="MOTRIL"):
         str(promedio_empleados),
         str(total_ord),
         str(total_ext),
+        # ORDEN EXACTO:
         f"{total_base_cc:,.2f}",
         f"{total_base_cp:,.2f}",
         f"{total_base_irpf:,.2f}",
-        f"{total_retrib:,.2f}",
+        f"{total_valor_especie:,.2f}",
         f"{total_ss_trab:,.2f}",
         f"{total_ss_emp:,.2f}",
         f"{total_irpf:,.2f}",
-        f"{total_valor_especie:,.2f}",
-        f"{total_deduc_adic:,.2f}",
         f"{total_otras_ret:,.2f}",
+        f"{total_retrib:,.2f}",
         f"{total_liquido:,.2f}",
+        # Adicionales:
+        f"{total_deduc_adic:,.2f}",
         f"{total_coste:,.2f}"
     ])
     
-    # Anchos de columna optimizados para mostrar decimales (total ~540 puntos)
+    # Anchos de columna optimizados según orden del PDF original
     col_widths = [
-        28,   # Mes (abreviado)
+        28,   # Mes
         20,   # Emp
         18,   # Ord
         18,   # Ext
-        38,   # Base CC (con decimales)
-        38,   # Base CP (con decimales)
-        38,   # Base IRPF (con decimales)
-        42,   # Retrib Total (con decimales)
-        35,   # SS Trab (con decimales)
-        35,   # SS Emp (con decimales)
-        35,   # IRPF (con decimales)
-        32,   # Val Esp (con decimales)
-        32,   # Ded Adic (con decimales)
-        32,   # Otras Ret (con decimales)
-        42,   # Líquido (con decimales)
-        45    # Coste Total (con decimales)
+        38,   # Base CC
+        38,   # Base CP
+        38,   # Base IRPF
+        32,   # Val Esp
+        35,   # Deducción (SS Trab)
+        35,   # Costes Emp (SS Emp)
+        35,   # Ret IRPF
+        32,   # Otras Ret
+        42,   # Retribuciones
+        42,   # Líquido
+        32,   # Ded Adic
+        45    # Coste Total
     ]
     
     tabla_unica = Table(datos_tabla, colWidths=col_widths, repeatRows=1)
@@ -373,17 +370,17 @@ def generar_pdf_ejecutivo(datos_meses, empresa="COMASUR", centro="MOTRIL"):
         ("LINEAFTER", (1, 0), (1, -1), 0.75, colors.HexColor('#666666')),  # Después de Emp
         ("LINEAFTER", (3, 0), (3, -1), 0.75, colors.HexColor('#666666')),  # Después de Ext
         ("LINEAFTER", (6, 0), (6, -1), 0.75, colors.HexColor('#666666')),  # Después de Base IRPF
-        ("LINEAFTER", (7, 0), (7, -1), 0.75, colors.HexColor('#666666')),  # Después de Retrib
-        ("LINEAFTER", (10, 0), (10, -1), 0.75, colors.HexColor('#666666')), # Después de IRPF
-        ("LINEAFTER", (13, 0), (13, -1), 0.75, colors.HexColor('#666666')), # Después de Otras Ret
+        ("LINEAFTER", (7, 0), (7, -1), 0.75, colors.HexColor('#666666')),  # Después de Val.Esp
+        ("LINEAFTER", (11, 0), (11, -1), 0.75, colors.HexColor('#666666')), # Después de Otras Ret
+        ("LINEAFTER", (13, 0), (13, -1), 0.75, colors.HexColor('#666666')), # Después de Líquido
         
         # === ALTERNAR COLORES DE FILA ===
         ("ROWBACKGROUNDS", (0, 1), (-1, -2), [colors.white, colors.HexColor('#F8F8F8')]),
         
         # === DESTACAR COLUMNAS CLAVE CON FONDOS SUTILES ===
-        ("BACKGROUND", (7, 1), (7, -2), colors.HexColor('#FFFACD')),   # Retrib Total (amarillo claro)
-        ("BACKGROUND", (14, 1), (14, -2), colors.HexColor('#E0F7FA')),  # Líquido (azul claro)
-        ("BACKGROUND", (15, 1), (15, -2), colors.HexColor('#FFEBEE')),  # Coste Total (rojo claro)
+        ("BACKGROUND", (12, 1), (12, -2), colors.HexColor('#FFFACD')),   # Retribuciones (amarillo)
+        ("BACKGROUND", (13, 1), (13, -2), colors.HexColor('#E0F7FA')),  # Líquido (azul)
+        ("BACKGROUND", (15, 1), (15, -2), colors.HexColor('#FFEBEE')),  # Coste Total (rojo)
     ]))
     
     elementos.append(tabla_unica)
@@ -391,11 +388,11 @@ def generar_pdf_ejecutivo(datos_meses, empresa="COMASUR", centro="MOTRIL"):
     
     # === LEYENDA COMPACTA ===
     leyenda = """
-    <b>Abreviaturas:</b> Emp.=Empleados | Ord=Nóminas Ordinarias | Ext=Nóminas Extraordinarias | 
+    <b>Orden de columnas (igual al PDF original):</b><br/>
     Base C.C.=Contingencias Comunes | Base C.P.=Contingencias Profesionales | Base IRPF=Base Imponible | 
-    Retrib.=Retribuciones | SS=Seguridad Social | Trab.=Trabajador | Emp.=Empresa | 
-    Val.Esp.=Valor en Especie | Ded.Adic.=Deducciones Adicionales (anticipos/embargos) | 
-    Otras Ret.=Otras Retenciones
+    Val.Esp.=Valor en Especie | Deduc.=Deducción SS Trabajador | Costes Emp.=Costes SS Empresa | 
+    Ret.IRPF=Retención IRPF | Otras Ret.=Otras Retenciones | Retrib.=Retribuciones | 
+    Ded.Adic.=Deducciones Adicionales (anticipos/embargos) | Coste Total=Retrib.+Costes Emp.
     """
     elementos.append(Paragraph(leyenda, ParagraphStyle('Legend', parent=estilos['Normal'], fontSize=6.5, textColor=colors.grey)))
     elementos.append(Spacer(1, 20))
@@ -559,9 +556,9 @@ if archivo:
         meses_ordenados = sorted(datos_meses.keys(), key=lambda x: MESES_ES[x])
         
         st.markdown("---")
-        st.subheader("📊 Resumen Completo Mensual - Todas las Columnas")
+        st.subheader("📊 Resumen Completo Mensual - Orden Original del PDF")
         
-        # Crear DataFrame completo con las 16 columnas (igual que el PDF)
+        # Crear DataFrame con el ORDEN EXACTO del PDF original
         df_resumen = []
         for mes in meses_ordenados:
             datos = datos_meses[mes]
@@ -572,24 +569,27 @@ if archivo:
                 "Emp.": datos["empleados"],
                 "Nóm.Ord": datos["nominas_ordinarias"],
                 "Nóm.Ext": datos["nominas_extraordinarias"],
+                # ORDEN EXACTO DEL PDF:
                 "Base C.C.": f"{datos['base_cc']:,.2f} €",
                 "Base C.P.": f"{datos['base_cp']:,.2f} €",
                 "Base IRPF": f"{datos['base_irpf']:,.2f} €",
-                "Retribuciones": f"{datos['retribuciones']:,.2f} €",
-                "SS Trab.": f"{datos['deduccion_ss_trabajador']:,.2f} €",
-                "SS Empresa": f"{datos['coste_ss_empresa']:,.2f} €",
-                "IRPF": f"{datos['retencion_irpf']:,.2f} €",
                 "Val.Especie": f"{datos['valor_especie']:,.2f} €",
-                "Ded.Adic.": f"{datos['deducciones_adicionales']:,.2f} €",
+                "Deducción": f"{datos['deduccion_ss_trabajador']:,.2f} €",
+                "Costes Empresa": f"{datos['coste_ss_empresa']:,.2f} €",
+                "Ret.IRPF": f"{datos['retencion_irpf']:,.2f} €",
                 "Otras Ret.": f"{datos['otras_retenciones']:,.2f} €",
+                "Retribuciones": f"{datos['retribuciones']:,.2f} €",
                 "Líquido": f"{datos['liquido']:,.2f} €",
-                "Coste Total": f"{kpis.get('coste_total', 0):,.2f} €"
+                # Calculado:
+                "Coste Total": f"{kpis.get('coste_total', 0):,.2f} €",
+                # Adicional (no en PDF pero útil):
+                "Ded.Adic.": f"{datos['deducciones_adicionales']:,.2f} €"
             })
         
         df_display = pd.DataFrame(df_resumen)
         st.dataframe(df_display, use_container_width=True, hide_index=True, height=400)
         
-        st.caption("✅ **16 columnas completas** | 📊 Datos con 2 decimales (sin redondeo)")
+        st.caption("✅ **16 columnas en orden del PDF original** | 📊 Datos exactos con 2 decimales")
         
         st.markdown("---")
         
