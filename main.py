@@ -269,18 +269,18 @@ def generar_pdf_ejecutivo(datos_meses, empresa="COMASUR", centro="MOTRIL"):
             str(datos["empleados"]),
             str(datos["nominas_ordinarias"]),
             str(datos["nominas_extraordinarias"]),
-            f"{datos['base_cc']:,.0f}",
-            f"{datos['base_cp']:,.0f}",
-            f"{datos['base_irpf']:,.0f}",
-            f"{datos['retribuciones']:,.0f}",
-            f"{datos['deduccion_ss_trabajador']:,.0f}",
-            f"{datos['coste_ss_empresa']:,.0f}",
-            f"{datos['retencion_irpf']:,.0f}",
-            f"{datos['valor_especie']:,.0f}",
-            f"{datos['deducciones_adicionales']:,.0f}",
-            f"{datos['otras_retenciones']:,.0f}",
-            f"{datos['liquido']:,.0f}",
-            f"{coste_total:,.0f}"
+            f"{datos['base_cc']:,.2f}",
+            f"{datos['base_cp']:,.2f}",
+            f"{datos['base_irpf']:,.2f}",
+            f"{datos['retribuciones']:,.2f}",
+            f"{datos['deduccion_ss_trabajador']:,.2f}",
+            f"{datos['coste_ss_empresa']:,.2f}",
+            f"{datos['retencion_irpf']:,.2f}",
+            f"{datos['valor_especie']:,.2f}",
+            f"{datos['deducciones_adicionales']:,.2f}",
+            f"{datos['otras_retenciones']:,.2f}",
+            f"{datos['liquido']:,.2f}",
+            f"{coste_total:,.2f}"
         ])
     
     # Fila de totales
@@ -306,38 +306,38 @@ def generar_pdf_ejecutivo(datos_meses, empresa="COMASUR", centro="MOTRIL"):
         str(promedio_empleados),
         str(total_ord),
         str(total_ext),
-        f"{total_base_cc:,.0f}",
-        f"{total_base_cp:,.0f}",
-        f"{total_base_irpf:,.0f}",
-        f"{total_retrib:,.0f}",
-        f"{total_ss_trab:,.0f}",
-        f"{total_ss_emp:,.0f}",
-        f"{total_irpf:,.0f}",
-        f"{total_valor_especie:,.0f}",
-        f"{total_deduc_adic:,.0f}",
-        f"{total_otras_ret:,.0f}",
-        f"{total_liquido:,.0f}",
-        f"{total_coste:,.0f}"
+        f"{total_base_cc:,.2f}",
+        f"{total_base_cp:,.2f}",
+        f"{total_base_irpf:,.2f}",
+        f"{total_retrib:,.2f}",
+        f"{total_ss_trab:,.2f}",
+        f"{total_ss_emp:,.2f}",
+        f"{total_irpf:,.2f}",
+        f"{total_valor_especie:,.2f}",
+        f"{total_deduc_adic:,.2f}",
+        f"{total_otras_ret:,.2f}",
+        f"{total_liquido:,.2f}",
+        f"{total_coste:,.2f}"
     ])
     
-    # Anchos de columna optimizados (total ~540 puntos para A4 horizontal)
+    # Anchos de columna optimizados para mostrar decimales (total ~540 puntos)
     col_widths = [
-        30,   # Mes (abreviado)
+        28,   # Mes (abreviado)
         20,   # Emp
         18,   # Ord
         18,   # Ext
-        34,   # Base CC
-        34,   # Base CP
-        34,   # Base IRPF
-        40,   # Retrib Total
-        30,   # SS Trab
-        30,   # SS Emp
-        30,   # IRPF
-        28,   # Val Esp
-        28,   # Ded Adic
-        28,   # Otras Ret
-        40,   # Líquido
-        42    # Coste Total
+        38,   # Base CC (con decimales)
+        38,   # Base CP (con decimales)
+        38,   # Base IRPF (con decimales)
+        42,   # Retrib Total (con decimales)
+        35,   # SS Trab (con decimales)
+        35,   # SS Emp (con decimales)
+        35,   # IRPF (con decimales)
+        32,   # Val Esp (con decimales)
+        32,   # Ded Adic (con decimales)
+        32,   # Otras Ret (con decimales)
+        42,   # Líquido (con decimales)
+        45    # Coste Total (con decimales)
     ]
     
     tabla_unica = Table(datos_tabla, colWidths=col_widths, repeatRows=1)
@@ -559,9 +559,9 @@ if archivo:
         meses_ordenados = sorted(datos_meses.keys(), key=lambda x: MESES_ES[x])
         
         st.markdown("---")
-        st.subheader("📊 Resumen Ejecutivo Mensual")
+        st.subheader("📊 Resumen Completo Mensual - Todas las Columnas")
         
-        # Crear DataFrame para visualización
+        # Crear DataFrame completo con las 16 columnas (igual que el PDF)
         df_resumen = []
         for mes in meses_ordenados:
             datos = datos_meses[mes]
@@ -569,19 +569,27 @@ if archivo:
             
             df_resumen.append({
                 "Mes": mes.capitalize(),
-                "Empl.": datos["empleados"],
-                "N.Ord": datos["nominas_ordinarias"],
-                "N.Ext": datos["nominas_extraordinarias"],
-                "Retribuciones": f"{datos['retribuciones']:,.0f} €",
-                "SS Trab.": f"{datos['deduccion_ss_trabajador']:,.0f} €",
-                "SS Empresa": f"{datos['coste_ss_empresa']:,.0f} €",
-                "IRPF": f"{datos['retencion_irpf']:,.0f} €",
-                "Líquido": f"{datos['liquido']:,.0f} €",
-                "Coste Total": f"{kpis.get('coste_total', 0):,.0f} €"
+                "Emp.": datos["empleados"],
+                "Nóm.Ord": datos["nominas_ordinarias"],
+                "Nóm.Ext": datos["nominas_extraordinarias"],
+                "Base C.C.": f"{datos['base_cc']:,.2f} €",
+                "Base C.P.": f"{datos['base_cp']:,.2f} €",
+                "Base IRPF": f"{datos['base_irpf']:,.2f} €",
+                "Retribuciones": f"{datos['retribuciones']:,.2f} €",
+                "SS Trab.": f"{datos['deduccion_ss_trabajador']:,.2f} €",
+                "SS Empresa": f"{datos['coste_ss_empresa']:,.2f} €",
+                "IRPF": f"{datos['retencion_irpf']:,.2f} €",
+                "Val.Especie": f"{datos['valor_especie']:,.2f} €",
+                "Ded.Adic.": f"{datos['deducciones_adicionales']:,.2f} €",
+                "Otras Ret.": f"{datos['otras_retenciones']:,.2f} €",
+                "Líquido": f"{datos['liquido']:,.2f} €",
+                "Coste Total": f"{kpis.get('coste_total', 0):,.2f} €"
             })
         
         df_display = pd.DataFrame(df_resumen)
-        st.dataframe(df_display, use_container_width=True, hide_index=True)
+        st.dataframe(df_display, use_container_width=True, hide_index=True, height=400)
+        
+        st.caption("✅ **16 columnas completas** | 📊 Datos con 2 decimales (sin redondeo)")
         
         st.markdown("---")
         
@@ -691,29 +699,6 @@ if archivo:
             st.plotly_chart(fig_pie, use_container_width=True)
         
         st.markdown("---")
-        
-        # Desglose técnico
-        with st.expander("🔍 Ver Desglose Técnico Completo (Todas las bases oficiales)"):
-            st.subheader("Bases de Cotización y Retenciones")
-            
-            df_tecnico = []
-            for mes in meses_ordenados:
-                datos = datos_meses[mes]
-                
-                df_tecnico.append({
-                    "Mes": mes.capitalize(),
-                    "Base C.C.": f"{datos['base_cc']:,.2f} €",
-                    "Base C.P.": f"{datos['base_cp']:,.2f} €",
-                    "Base IRPF": f"{datos['base_irpf']:,.2f} €",
-                    "Valor Especie": f"{datos['valor_especie']:,.2f} €",
-                    "Deduc. Adic.": f"{datos['deducciones_adicionales']:,.2f} €",
-                    "Otras Ret.": f"{datos['otras_retenciones']:,.2f} €"
-                })
-            
-            df_tecnico_display = pd.DataFrame(df_tecnico)
-            st.dataframe(df_tecnico_display, use_container_width=True, hide_index=True)
-            
-            st.caption("**Abreviaturas:** Base C.C. = Contingencias Comunes | Base C.P. = Contingencias Profesionales | Deduc. Adic. = Anticipos/Embargos/Préstamos")
         
         st.markdown("---")
         
