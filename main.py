@@ -569,7 +569,6 @@ if archivo:
                 "Empleados": datos["empleados"],
                 "Nóm.Ord": datos["nominas_ordinarias"],
                 "Nóm.Ext": datos["nominas_extraordinarias"],
-                # ORDEN Y NOMBRES EXACTOS DEL PDF:
                 "Base C.C.": f"{datos['base_cc']:,.2f} €",
                 "Base C.P.": f"{datos['base_cp']:,.2f} €",
                 "Retribuciones": f"{datos['retribuciones']:,.2f} €",
@@ -581,11 +580,19 @@ if archivo:
                 "Retención IRPF": f"{datos['retencion_irpf']:,.2f} €",
                 "Otras Retenciones": f"{datos['otras_retenciones']:,.2f} €",
                 "Líquido": f"{datos['liquido']:,.2f} €",
-                # Columna calculada adicional:
                 "Coste Total": f"{kpis.get('coste_total', 0):,.2f} €"
             })
         
-        df_display = pd.DataFrame(df_resumen)
+        # Forzar orden de columnas EXACTO del PDF original
+        ORDEN_COLUMNAS = [
+            "Mes", "Empleados", "Nóm.Ord", "Nóm.Ext",
+            "Base C.C.", "Base C.P.", "Retribuciones",
+            "Costes trabajador", "Valor Especie", "Deducción",
+            "Costes Empresa", "Base IRPF", "Retención IRPF",
+            "Otras Retenciones", "Líquido", "Coste Total"
+        ]
+        
+        df_display = pd.DataFrame(df_resumen)[ORDEN_COLUMNAS]
         st.dataframe(df_display, use_container_width=True, hide_index=True, height=400)
         
         st.caption("✅ **Columnas con nombres y orden exactos del PDF original** | 📊 Datos con 2 decimales")
