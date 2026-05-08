@@ -458,6 +458,53 @@ def generar_pdf_ejecutivo(datos_meses, empresa="COMASUR", centro="MOTRIL"):
     buffer.seek(0)
     
     return buffer
+def generar_csv_tecnico_completo(datos_meses):
+    """
+    Genera CSV técnico completo con TODAS las columnas oficiales
+    para asesoría laboral y gestoría.
+    """
+    meses_ordenados = sorted(datos_meses.keys(), key=lambda x: MESES_ES[x])
+    
+    csv_data = []
+    
+    for mes in meses_ordenados:
+        datos = datos_meses[mes]
+        coste_total = calcular_coste_total_empresa(datos)
+        kpis = calcular_kpis_mes(datos)
+        
+        csv_data.append({
+            "Mes": mes,
+            "Numero_Mes": MESES_ES[mes],
+            "Empleados": datos["empleados"],
+            "Nominas_Ordinarias": datos["nominas_ordinarias"],
+            "Nominas_Extraordinarias": datos["nominas_extraordinarias"],
+            "Base_Contingencias_Comunes": round(datos["base_cc"], 2),
+            "Base_Contingencias_Profesionales": round(datos["base_cp"], 2),
+            "Base_IRPF": round(datos["base_irpf"], 2),
+            "Retribuciones_Totales": round(datos["retribuciones"], 2),
+            "Retribuciones_Ordinarias": round(datos["retribuciones_ordinarias"], 2),
+            "Retribuciones_Extraordinarias": round(datos["retribuciones_extraordinarias"], 2),
+            "Deduccion_SS_Trabajador": round(datos["deduccion_ss_trabajador"], 2),
+            "Valor_Especie": round(datos["valor_especie"], 2),
+            "Deducciones_Adicionales": round(datos["deducciones_adicionales"], 2),
+            "Coste_SS_Empresa": round(datos["coste_ss_empresa"], 2),
+            "Retencion_IRPF": round(datos["retencion_irpf"], 2),
+            "Otras_Retenciones": round(datos["otras_retenciones"], 2),
+            "Liquido_Total": round(datos["liquido"], 2),
+            "Coste_Total_Empresa": round(coste_total, 2),
+            "Salario_Medio": round(kpis.get("salario_medio", 0), 2),
+            "Coste_Medio_Empleado": round(kpis.get("coste_medio_empleado", 0), 2),
+            "Porcentaje_SS_Trabajador": round(kpis.get("ratio_ss_trabajador", 0), 2),
+            "Porcentaje_SS_Empresa": round(kpis.get("ratio_ss_empresa", 0), 2),
+            "Porcentaje_IRPF": round(kpis.get("ratio_irpf", 0), 2),
+            "Porcentaje_Liquido": round(kpis.get("ratio_liquido", 0), 2),
+            "Porcentaje_Nominas_Ordinarias": round(kpis.get("porcentaje_ordinarias", 100), 2)
+        })
+    
+    df = pd.DataFrame(csv_data)
+    return df
+
+
 
 st.title("📊 Análisis Laboral y Financiero Profesional")
 st.caption("🔒 Sistema anonimizado - Cumplimiento RGPD | ✅ Apto para asesoría laboral")
