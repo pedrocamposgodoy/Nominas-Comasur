@@ -3,3 +3,6 @@ __pycache__/
 .streamlit/
 .env
 venv/
+*.pdf
+*.csv
+.DS_Store
