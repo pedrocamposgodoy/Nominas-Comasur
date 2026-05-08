@@ -227,16 +227,37 @@ def generar_pdf_ejecutivo(datos_meses, empresa="COMASUR", centro="MOTRIL"):
     elementos.append(nota_confidencial)
     elementos.append(PageBreak())
     
-    # === RESUMEN EJECUTIVO ===
-    elementos.append(Paragraph("<b>RESUMEN EJECUTIVO MENSUAL</b>", estilo_subtitulo))
-    elementos.append(Spacer(1, 12))
+    # === TABLA ÚNICA COMPLETA ===
+    elementos.append(Paragraph("<b>RESUMEN COMPLETO MENSUAL</b>", estilo_subtitulo))
+    elementos.append(Spacer(1, 8))
+    
+    # Nota explicativa
+    nota_tabla = Paragraph(
+        "<i>Tabla completa con todos los datos financieros y técnicos del período</i>",
+        ParagraphStyle('Note', parent=estilos['Normal'], fontSize=7, textColor=colors.grey, alignment=TA_CENTER)
+    )
+    elementos.append(nota_tabla)
+    elementos.append(Spacer(1, 10))
     
     meses_ordenados = sorted(datos_meses.keys(), key=lambda x: MESES_ES[x])
     
-    # Tabla principal con todas las columnas
+    # Tabla única horizontal con TODAS las columnas organizadas inteligentemente
+    # Usar abreviaturas y diseño compacto
     datos_tabla = [[
-        "Mes", "Empl.", "Nóm.\nOrd", "Nóm.\nExt", "Retrib.\nTotal",
-        "SS\nTrab.", "SS\nEmpresa", "IRPF", "Líquido", "Coste\nTotal"
+        # Identificación
+        "Mes", "Emp.",
+        # Tipos nómina
+        "Ord", "Ext",
+        # Bases oficiales (grupo 1)
+        "Base\nC.C.", "Base\nC.P.", "Base\nIRPF",
+        # Retribuciones
+        "Retrib.\nTotal",
+        # Deducciones (grupo 2)
+        "SS\nTrab.", "SS\nEmp.", "IRPF",
+        # Otros conceptos
+        "Val.\nEsp.", "Ded.\nAdic.", "Otras\nRet.",
+        # Resultado final
+        "Líquido", "Coste\nTotal"
     ]]
     
     for mes in meses_ordenados:
@@ -244,147 +265,139 @@ def generar_pdf_ejecutivo(datos_meses, empresa="COMASUR", centro="MOTRIL"):
         coste_total = calcular_coste_total_empresa(datos)
         
         datos_tabla.append([
-            mes.capitalize(),
+            mes[:3].upper(),  # Abreviar mes (ENE, FEB, MAR...)
             str(datos["empleados"]),
             str(datos["nominas_ordinarias"]),
             str(datos["nominas_extraordinarias"]),
+            f"{datos['base_cc']:,.0f}",
+            f"{datos['base_cp']:,.0f}",
+            f"{datos['base_irpf']:,.0f}",
             f"{datos['retribuciones']:,.0f}",
             f"{datos['deduccion_ss_trabajador']:,.0f}",
             f"{datos['coste_ss_empresa']:,.0f}",
             f"{datos['retencion_irpf']:,.0f}",
+            f"{datos['valor_especie']:,.0f}",
+            f"{datos['deducciones_adicionales']:,.0f}",
+            f"{datos['otras_retenciones']:,.0f}",
             f"{datos['liquido']:,.0f}",
             f"{coste_total:,.0f}"
         ])
     
-    # Totales
+    # Fila de totales
     total_empleados = sum(d["empleados"] for d in datos_meses.values())
     promedio_empleados = total_empleados // len(datos_meses)
     total_ord = sum(d["nominas_ordinarias"] for d in datos_meses.values())
     total_ext = sum(d["nominas_extraordinarias"] for d in datos_meses.values())
+    total_base_cc = sum(d["base_cc"] for d in datos_meses.values())
+    total_base_cp = sum(d["base_cp"] for d in datos_meses.values())
+    total_base_irpf = sum(d["base_irpf"] for d in datos_meses.values())
     total_retrib = sum(d["retribuciones"] for d in datos_meses.values())
     total_ss_trab = sum(d["deduccion_ss_trabajador"] for d in datos_meses.values())
     total_ss_emp = sum(d["coste_ss_empresa"] for d in datos_meses.values())
     total_irpf = sum(d["retencion_irpf"] for d in datos_meses.values())
+    total_valor_especie = sum(d["valor_especie"] for d in datos_meses.values())
+    total_deduc_adic = sum(d["deducciones_adicionales"] for d in datos_meses.values())
+    total_otras_ret = sum(d["otras_retenciones"] for d in datos_meses.values())
     total_liquido = sum(d["liquido"] for d in datos_meses.values())
     total_coste = total_retrib + total_ss_emp
     
     datos_tabla.append([
-        "TOTAL",
+        "TOT",
         str(promedio_empleados),
         str(total_ord),
         str(total_ext),
+        f"{total_base_cc:,.0f}",
+        f"{total_base_cp:,.0f}",
+        f"{total_base_irpf:,.0f}",
         f"{total_retrib:,.0f}",
         f"{total_ss_trab:,.0f}",
         f"{total_ss_emp:,.0f}",
         f"{total_irpf:,.0f}",
+        f"{total_valor_especie:,.0f}",
+        f"{total_deduc_adic:,.0f}",
+        f"{total_otras_ret:,.0f}",
         f"{total_liquido:,.0f}",
         f"{total_coste:,.0f}"
     ])
     
-    tabla_resumen = Table(datos_tabla, repeatRows=1)
-    tabla_resumen.setStyle(TableStyle([
+    # Anchos de columna optimizados (total ~540 puntos para A4 horizontal)
+    col_widths = [
+        30,   # Mes (abreviado)
+        20,   # Emp
+        18,   # Ord
+        18,   # Ext
+        34,   # Base CC
+        34,   # Base CP
+        34,   # Base IRPF
+        40,   # Retrib Total
+        30,   # SS Trab
+        30,   # SS Emp
+        30,   # IRPF
+        28,   # Val Esp
+        28,   # Ded Adic
+        28,   # Otras Ret
+        40,   # Líquido
+        42    # Coste Total
+    ]
+    
+    tabla_unica = Table(datos_tabla, colWidths=col_widths, repeatRows=1)
+    
+    # Estilo profesional con separadores visuales entre grupos
+    tabla_unica.setStyle(TableStyle([
+        # === ENCABEZADO ===
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor('#003366')),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, 0), 5.5),
+        ("ALIGN", (0, 0), (-1, 0), "CENTER"),
+        ("VALIGN", (0, 0), (-1, 0), "MIDDLE"),
+        ("LINEBELOW", (0, 0), (-1, 0), 1.5, colors.white),
+        
+        # === FILA DE TOTALES ===
         ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor('#CCE5FF')),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
         ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, -1), 7),
-        ("PADDING", (0, 0), (-1, -1), 4),
+        ("FONTSIZE", (0, -1), (-1, -1), 6),
+        
+        # === DATOS GENERALES ===
+        ("FONTSIZE", (0, 1), (-1, -2), 5.5),
+        ("PADDING", (0, 0), (-1, -1), 2.5),
         ("ALIGN", (1, 1), (-1, -1), "RIGHT"),
+        ("ALIGN", (0, 1), (0, -1), "CENTER"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        
+        # === BORDES ===
+        ("BOX", (0, 0), (-1, -1), 1, colors.black),
+        ("INNERGRID", (0, 0), (-1, -1), 0.25, colors.lightgrey),
+        
+        # === SEPARADORES VERTICALES ENTRE GRUPOS (líneas más gruesas) ===
+        ("LINEAFTER", (1, 0), (1, -1), 0.75, colors.HexColor('#666666')),  # Después de Emp
+        ("LINEAFTER", (3, 0), (3, -1), 0.75, colors.HexColor('#666666')),  # Después de Ext
+        ("LINEAFTER", (6, 0), (6, -1), 0.75, colors.HexColor('#666666')),  # Después de Base IRPF
+        ("LINEAFTER", (7, 0), (7, -1), 0.75, colors.HexColor('#666666')),  # Después de Retrib
+        ("LINEAFTER", (10, 0), (10, -1), 0.75, colors.HexColor('#666666')), # Después de IRPF
+        ("LINEAFTER", (13, 0), (13, -1), 0.75, colors.HexColor('#666666')), # Después de Otras Ret
+        
+        # === ALTERNAR COLORES DE FILA ===
+        ("ROWBACKGROUNDS", (0, 1), (-1, -2), [colors.white, colors.HexColor('#F8F8F8')]),
+        
+        # === DESTACAR COLUMNAS CLAVE CON FONDOS SUTILES ===
+        ("BACKGROUND", (7, 1), (7, -2), colors.HexColor('#FFFACD')),   # Retrib Total (amarillo claro)
+        ("BACKGROUND", (14, 1), (14, -2), colors.HexColor('#E0F7FA')),  # Líquido (azul claro)
+        ("BACKGROUND", (15, 1), (15, -2), colors.HexColor('#FFEBEE')),  # Coste Total (rojo claro)
     ]))
     
-    elementos.append(tabla_resumen)
-    elementos.append(Spacer(1, 20))
-    
-    # === DESGLOSE TÉCNICO CONTABLE ===
-    elementos.append(PageBreak())
-    elementos.append(Paragraph("<b>DESGLOSE TÉCNICO PARA ASESORÍA LABORAL</b>", estilo_subtitulo))
+    elementos.append(tabla_unica)
     elementos.append(Spacer(1, 12))
     
-    # Tabla técnica completa con TODAS las bases
-    datos_tecnica = [[
-        "Mes", "Base\nC.C.", "Base\nC.P.", "Base\nIRPF", "Valor\nEspecie", "Deduc.\nAdic.", "Otras\nRet."
-    ]]
-    
-    for mes in meses_ordenados:
-        datos = datos_meses[mes]
-        
-        datos_tecnica.append([
-            mes.capitalize(),
-            f"{datos['base_cc']:,.2f}",
-            f"{datos['base_cp']:,.2f}",
-            f"{datos['base_irpf']:,.2f}",
-            f"{datos['valor_especie']:,.2f}",
-            f"{datos['deducciones_adicionales']:,.2f}",
-            f"{datos['otras_retenciones']:,.2f}"
-        ])
-    
-    # Totales técnicos
-    total_base_cc = sum(d["base_cc"] for d in datos_meses.values())
-    total_base_cp = sum(d["base_cp"] for d in datos_meses.values())
-    total_base_irpf = sum(d["base_irpf"] for d in datos_meses.values())
-    total_valor_especie = sum(d["valor_especie"] for d in datos_meses.values())
-    total_deduc_adic = sum(d["deducciones_adicionales"] for d in datos_meses.values())
-    total_otras_ret = sum(d["otras_retenciones"] for d in datos_meses.values())
-    
-    datos_tecnica.append([
-        "TOTAL",
-        f"{total_base_cc:,.2f}",
-        f"{total_base_cp:,.2f}",
-        f"{total_base_irpf:,.2f}",
-        f"{total_valor_especie:,.2f}",
-        f"{total_deduc_adic:,.2f}",
-        f"{total_otras_ret:,.2f}"
-    ])
-    
-    tabla_tecnica = Table(datos_tecnica, repeatRows=1)
-    tabla_tecnica.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor('#006600')),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor('#CCFFCC')),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, -1), 7),
-        ("PADDING", (0, 0), (-1, -1), 4),
-        ("ALIGN", (1, 1), (-1, -1), "RIGHT"),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-    ]))
-    
-    elementos.append(tabla_tecnica)
-    elementos.append(Spacer(1, 20))
-    
-    # === ANÁLISIS DE NÓMINAS ORDINARIAS VS EXTRAORDINARIAS ===
-    elementos.append(Paragraph("<b>ANÁLISIS TIPO DE NÓMINAS</b>", estilo_subtitulo))
-    elementos.append(Spacer(1, 12))
-    
-    datos_tipo = [["Mes", "Retrib. Ordinarias", "Retrib. Extraordinarias", "% Ordinarias"]]
-    
-    for mes in meses_ordenados:
-        datos = datos_meses[mes]
-        kpis = calcular_kpis_mes(datos)
-        
-        datos_tipo.append([
-            mes.capitalize(),
-            f"{datos['retribuciones_ordinarias']:,.2f} €",
-            f"{datos['retribuciones_extraordinarias']:,.2f} €",
-            f"{kpis.get('porcentaje_ordinarias', 100):.1f}%"
-        ])
-    
-    tabla_tipo = Table(datos_tipo, repeatRows=1)
-    tabla_tipo.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor('#660066')),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, -1), 8),
-        ("PADDING", (0, 0), (-1, -1), 6),
-        ("ALIGN", (1, 1), (-1, -1), "RIGHT"),
-    ]))
-    
-    elementos.append(tabla_tipo)
+    # === LEYENDA COMPACTA ===
+    leyenda = """
+    <b>Abreviaturas:</b> Emp.=Empleados | Ord=Nóminas Ordinarias | Ext=Nóminas Extraordinarias | 
+    Base C.C.=Contingencias Comunes | Base C.P.=Contingencias Profesionales | Base IRPF=Base Imponible | 
+    Retrib.=Retribuciones | SS=Seguridad Social | Trab.=Trabajador | Emp.=Empresa | 
+    Val.Esp.=Valor en Especie | Ded.Adic.=Deducciones Adicionales (anticipos/embargos) | 
+    Otras Ret.=Otras Retenciones
+    """
+    elementos.append(Paragraph(leyenda, ParagraphStyle('Legend', parent=estilos['Normal'], fontSize=6.5, textColor=colors.grey)))
     elementos.append(Spacer(1, 20))
     
     # === KPIs PROMEDIO ===
