@@ -558,44 +558,41 @@ if archivo:
         st.markdown("---")
         st.subheader("📊 Resumen Completo Mensual")
         
-        # Crear DataFrame con NOMBRES Y ORDEN EXACTOS del PDF original
         df_resumen = []
         for mes in meses_ordenados:
             datos = datos_meses[mes]
             kpis = calcular_kpis_mes(datos)
-            
             df_resumen.append({
-                "Mes": mes.capitalize(),
-                "Empleados": datos["empleados"],
-                "Nóm.Ord": datos["nominas_ordinarias"],
-                "Nóm.Ext": datos["nominas_extraordinarias"],
-                "Base C.C.": f"{datos['base_cc']:,.2f} €",
-                "Base C.P.": f"{datos['base_cp']:,.2f} €",
-                "Retribuciones": f"{datos['retribuciones']:,.2f} €",
+                "Mes":               mes.capitalize(),
+                "Empleados":         datos["empleados"],
+                "Nóm.Ord":           datos["nominas_ordinarias"],
+                "Nóm.Ext":           datos["nominas_extraordinarias"],
+                "Base C.C.":         f"{datos['base_cc']:,.2f} €",
+                "Base C.P.":         f"{datos['base_cp']:,.2f} €",
+                "Retribuciones":     f"{datos['retribuciones']:,.2f} €",
                 "Costes trabajador": f"{datos['deduccion_ss_trabajador']:,.2f} €",
-                "Valor Especie": f"{datos['valor_especie']:,.2f} €",
-                "Deducción": f"{datos['deducciones_adicionales']:,.2f} €",
-                "Costes Empresa": f"{datos['coste_ss_empresa']:,.2f} €",
-                "Base IRPF": f"{datos['base_irpf']:,.2f} €",
-                "Retención IRPF": f"{datos['retencion_irpf']:,.2f} €",
+                "Valor Especie":     f"{datos['valor_especie']:,.2f} €",
+                "Deducción":         f"{datos['deducciones_adicionales']:,.2f} €",
+                "Costes Empresa":    f"{datos['coste_ss_empresa']:,.2f} €",
+                "Base IRPF":         f"{datos['base_irpf']:,.2f} €",
+                "Retención IRPF":    f"{datos['retencion_irpf']:,.2f} €",
                 "Otras Retenciones": f"{datos['otras_retenciones']:,.2f} €",
-                "Líquido": f"{datos['liquido']:,.2f} €",
-                "Coste Total": f"{kpis.get('coste_total', 0):,.2f} €"
+                "Líquido":           f"{datos['liquido']:,.2f} €",
+                "Coste Total":       f"{kpis.get('coste_total', 0):,.2f} €"
             })
         
-        # Forzar orden de columnas EXACTO del PDF original
+        # Orden forzado columna por columna igual al PDF original
         ORDEN_COLUMNAS = [
             "Mes", "Empleados", "Nóm.Ord", "Nóm.Ext",
-            "Base C.C.", "Base C.P.", "Retribuciones",
-            "Costes trabajador", "Valor Especie", "Deducción",
-            "Costes Empresa", "Base IRPF", "Retención IRPF",
-            "Otras Retenciones", "Líquido", "Coste Total"
+            "Base C.C.", "Base C.P.",
+            "Retribuciones", "Costes trabajador", "Valor Especie",
+            "Deducción", "Costes Empresa", "Base IRPF",
+            "Retención IRPF", "Otras Retenciones", "Líquido",
+            "Coste Total"
         ]
-        
         df_display = pd.DataFrame(df_resumen)[ORDEN_COLUMNAS]
         st.dataframe(df_display, use_container_width=True, hide_index=True, height=400)
-        
-        st.caption("✅ **Columnas con nombres y orden exactos del PDF original** | 📊 Datos con 2 decimales")
+        st.caption("✅ Orden exacto del PDF original | 📊 Datos con 2 decimales")
         
         st.markdown("---")
         
