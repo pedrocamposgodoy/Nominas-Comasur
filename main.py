@@ -1,9 +1,10 @@
+import os
 import streamlit as st
 import pandas as pd
 import pdfplumber
 import re
 from io import BytesIO
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as RLImage
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.pagesizes import A4, landscape
@@ -241,7 +242,7 @@ def calcular_kpis_mes(d):
 # GENERACIÓN PDF (1 FOLIO)
 # =========================
 
-def generar_pdf_ejecutivo(datos_meses, empresa="COMASUR", centro="", anyo=""):
+def generar_pdf_ejecutivo(datos_meses, empresa="COMASUR", centro="", anyo="", logo_path=None):
     """
     Genera PDF en A4 apaisado (landscape).
     Todo en un solo folio: cabecera + tabla con columnas exactas del PDF + KPIs.
@@ -284,18 +285,65 @@ def generar_pdf_ejecutivo(datos_meses, empresa="COMASUR", centro="", anyo=""):
     periodo = ", ".join(m.capitalize() for m in meses_ordenados)
     fecha_gen = datetime.now().strftime("%d/%m/%Y %H:%M")
 
-    # ── CABECERA COMPACTA ──────────────────────────────────────────────────
-    titulo_txt = f"INFORME LABORAL Y FINANCIERO — {empresa}"
+    # ── CABECERA: LOGO + TÍTULO ────────────────────────────────────────────
+    titulo_txt = f"INFORME LABORAL Y FINANCIERO"
+    subtitulo_txt = empresa
     if centro:
-        titulo_txt += f" | Centro: {centro}"
+        subtitulo_txt += f"  |  Centro: {centro}"
     if anyo:
-        titulo_txt += f" | Año: {anyo}"
-    elementos.append(Paragraph(titulo_txt, estilo_cabecera))
-    elementos.append(Paragraph(
+        subtitulo_txt += f"  |  Año: {anyo}"
+    meta_txt = (
         f"Período: {periodo}   ·   Generado: {fecha_gen}   ·   "
-        "🔒 RGPD Compliant — datos agregados sin información personal identificable",
-        estilo_subcab
-    ))
+        "RGPD Compliant — datos agregados sin información personal"
+    )
+
+    # Celda izquierda: logo (si existe) o celda vacía
+    LOGO_H = 52  # altura del logo en pt (mantenemos proporción 1:1)
+    if logo_path and os.path.exists(logo_path):
+        celda_logo = RLImage(logo_path, width=LOGO_H, height=LOGO_H)
+    else:
+        celda_logo = Paragraph("", estilos['Normal'])
+
+    # Celda derecha: título + subtítulo + meta
+    estilo_titulo_cab = ParagraphStyle(
+        'TituloCab', parent=estilos['Normal'],
+        fontSize=11, fontName='Helvetica-Bold',
+        textColor=colors.HexColor('#003366'),
+        spaceAfter=2
+    )
+    estilo_sub_cab = ParagraphStyle(
+        'SubCab2', parent=estilos['Normal'],
+        fontSize=8, fontName='Helvetica-Bold',
+        textColor=colors.HexColor('#CC6600'),
+        spaceAfter=2
+    )
+    estilo_meta_cab = ParagraphStyle(
+        'MetaCab', parent=estilos['Normal'],
+        fontSize=6.5, fontName='Helvetica',
+        textColor=colors.HexColor('#555555'),
+    )
+
+    celda_texto = [
+        Paragraph(titulo_txt, estilo_titulo_cab),
+        Paragraph(subtitulo_txt, estilo_sub_cab),
+        Paragraph(meta_txt, estilo_meta_cab),
+    ]
+
+    # Tabla de 1 fila, 2 columnas: [logo | texto]
+    tabla_cab = Table(
+        [[celda_logo, celda_texto]],
+        colWidths=[LOGO_H + 8, 805 - LOGO_H - 8],
+        rowHeights=[LOGO_H + 4]
+    )
+    tabla_cab.setStyle(TableStyle([
+        ("VALIGN",   (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING",  (0, 0), (0, 0), 0),
+        ("RIGHTPADDING", (0, 0), (0, 0), 6),
+        ("LEFTPADDING",  (1, 0), (1, 0), 8),
+        ("LINEBELOW", (0, 0), (-1, 0), 1.5, colors.HexColor('#003366')),
+    ]))
+    elementos.append(tabla_cab)
+    elementos.append(Spacer(1, 5))
 
     # ── TABLA PRINCIPAL ───────────────────────────────────────────────────
     # Cabecera con nombres EXACTOS del PDF original
@@ -761,7 +809,28 @@ if archivo:
             f"Columnas exactas del PDF original · Centro: **{centro}** · "
             f"Año: **{anyo}** · Todo en un único folio"
         )
-        pdf_buffer = generar_pdf_ejecutivo(datos_meses, empresa=empresa, centro=centro, anyo=anyo)
+
+        # Logo para el PDF: usa el subido, o el de la carpeta de la app si existe
+        logo_uploader = st.file_uploader(
+            "🖼️ Logo para el PDF (opcional — PNG/JPG)",
+            type=["png", "jpg", "jpeg"],
+            key="logo_uploader"
+        )
+        # Determinar ruta del logo
+        logo_path = None
+        LOGO_APP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "LOGO.png")
+        if logo_uploader:
+            # Guardar logo subido en temporal
+            logo_tmp = "/tmp/logo_informe.png"
+            with open(logo_tmp, "wb") as f:
+                f.write(logo_uploader.read())
+            logo_path = logo_tmp
+        elif os.path.exists(LOGO_APP):
+            logo_path = LOGO_APP
+
+        pdf_buffer = generar_pdf_ejecutivo(
+            datos_meses, empresa=empresa, centro=centro, anyo=anyo, logo_path=logo_path
+        )
         st.download_button(
             label="📄 Descargar PDF",
             data=pdf_buffer,
