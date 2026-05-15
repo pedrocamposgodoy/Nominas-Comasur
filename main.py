@@ -44,67 +44,79 @@ def convertir_a_float(valor_str):
 
 def extraer_metadatos_pdf(pdf_file):
     """
-    Extrae el centro de trabajo, año y empresa del PDF.
-    Busca patrones en cabeceras y líneas de identificación.
-    Devuelve un dict con 'empresa', 'centro', 'año'.
+    Extrae centro, empresa y año del PDF de COMASUR.
+
+    Patrones reales del PDF:
+      - Empresa:  "EMPRESA : 360 SUMINISTROS INDUSTRIALES COMASUR SA"
+                  "EMPRESA : <nombre>"
+      - Centro:   "Del Centro COMASUR MOTRIL Desde el Centro ..."
+                  "Del Centro <nombre> Desde..."
+      - Año:      "Hasta DICIEMBRE del ejercicio 2025"
+                  cualquier año 20XX en cabecera
     """
-    empresa = "COMASUR"
+    empresa = ""
     centro = ""
-    anyo = str(datetime.now().year)
+    anyo = ""
 
     with pdfplumber.open(pdf_file) as pdf:
-        # Solo analizamos las primeras páginas para encontrar metadatos
         for pagina in pdf.pages[:5]:
             texto = pagina.extract_text()
             if not texto:
                 continue
 
             for linea in texto.split("\n"):
-                linea_strip = linea.strip()
+                s = linea.strip()
 
-                # Detectar año (4 dígitos entre 2000-2099)
-                if not anyo or anyo == str(datetime.now().year):
-                    anyo_match = re.search(r"\b(20\d{2})\b", linea_strip)
-                    if anyo_match:
-                        anyo = anyo_match.group(1)
+                # ── Año ────────────────────────────────────────────────────
+                # "Hasta DICIEMBRE del ejercicio 2025"
+                if not anyo:
+                    m = re.search(r"ejercicio\s+(20\d{2})", s, re.IGNORECASE)
+                    if m:
+                        anyo = m.group(1)
+                if not anyo:
+                    m = re.search(r"\b(20\d{2})\b", s)
+                    if m:
+                        anyo = m.group(1)
 
-                # Detectar centro de trabajo
-                # Formato: "Centro:" o "Centro de Trabajo:" o "Centro :"
-                if re.search(r"centro\s*(de\s*trabajo)?\s*:", linea_strip, re.IGNORECASE):
-                    centro_match = re.search(
-                        r"centro\s*(?:de\s*trabajo)?\s*:\s*([A-Za-zÁÉÍÓÚáéíóúÑñ\s\-]+)",
-                        linea_strip, re.IGNORECASE
+                # ── Centro ─────────────────────────────────────────────────
+                # Formato real: "Del Centro COMASUR MOTRIL Desde el Centro ..."
+                if not centro:
+                    m = re.search(
+                        r"Del\s+Centro\s+(.+?)\s+Desde\s+el\s+Centro",
+                        s, re.IGNORECASE
                     )
-                    if centro_match:
-                        centro = centro_match.group(1).strip()
+                    if m:
+                        centro = m.group(1).strip()
 
-                # El nombre del centro también puede aparecer en la cuenta
-                # Formato: "Total de la Cuenta XXXXXXXX NombreCentro (Mes)"
-                cuenta_match = re.search(
-                    r"Total de la Cuenta\s+\S+\s+(.+?)\s*\(", linea_strip, re.IGNORECASE
-                )
-                if cuenta_match and not centro:
-                    candidato = cuenta_match.group(1).strip()
-                    # Filtrar si es "Principal" o similar — es el nombre del centro
-                    if candidato and candidato.lower() not in ("principal",):
-                        centro = candidato
+                # Fallback: "Filtro : EMPRESA : xxx   Del Centro COMASUR MOTRIL"
+                if not centro:
+                    m = re.search(r"Del\s+Centro\s+([A-Z0-9ÁÉÍÓÚÑa-záéíóúñ\s\-\.]+?)(?:\s{2,}|$|Desde)",
+                                  s, re.IGNORECASE)
+                    if m:
+                        centro = m.group(1).strip()
 
-                # Formato: "Empresa:" o nombre en cabecera
-                if re.search(r"empresa\s*:", linea_strip, re.IGNORECASE):
-                    emp_match = re.search(
-                        r"empresa\s*:\s*([A-Za-z0-9ÁÉÍÓÚáéíóúÑñ\s\.\-]+)",
-                        linea_strip, re.IGNORECASE
-                    )
-                    if emp_match:
-                        empresa = emp_match.group(1).strip()
+                # ── Empresa ────────────────────────────────────────────────
+                # Formato real: "EMPRESA : 360 SUMINISTROS INDUSTRIALES COMASUR SA"
+                if not empresa:
+                    m = re.search(r"EMPRESA\s*:\s*(.+)", s, re.IGNORECASE)
+                    if m:
+                        candidato = m.group(1).strip()
+                        # Evitar capturar el filtro de cabecera completo (demasiado largo)
+                        if len(candidato) < 80:
+                            empresa = candidato
 
-                # Si la empresa aparece como título / cabecera (todo mayúsculas al inicio)
-                if re.match(r"^[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s\.,]{5,}$", linea_strip):
-                    # Heurística: línea corta, todo mayúsculas → posible nombre empresa
-                    if 5 < len(linea_strip) < 50 and empresa == "COMASUR":
-                        empresa = linea_strip
+                # Fallback empresa: "Filtro : EMPRESA : 360 SUMINISTROS ..."
+                if not empresa:
+                    m = re.search(r"Filtro\s*:.*?EMPRESA\s*:\s*([A-Z0-9ÁÉÍÓÚÑa-z\s\.\-]+?)(?:\s{2,}|$)",
+                                  s, re.IGNORECASE)
+                    if m:
+                        empresa = m.group(1).strip()
 
-    return {"empresa": empresa, "centro": centro if centro else "No detectado", "anyo": anyo}
+    return {
+        "empresa": empresa if empresa else "COMASUR",
+        "centro":  centro  if centro  else "No detectado",
+        "anyo":    anyo    if anyo    else str(datetime.now().year),
+    }
 
 
 def extraer_datos_por_mes(pdf_file):
